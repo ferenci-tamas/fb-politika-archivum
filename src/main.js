@@ -19,6 +19,7 @@ import landingMarkdown from '../landing.md?raw';
 let worker = null;
 let dbInitStarted = false;
 let activeTab = 'nyitolap';
+let firstQueryDone = false;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -154,6 +155,16 @@ function send(direction) {
   });
 }
 
+// Runs the initial feed query the first time the Adatbázis tab is shown with the
+// database ready — deferred so a background preload doesn't query or announce
+// while the user is still on the landing page.
+function runFirstQueryIfNeeded() {
+  if (state.ready && !firstQueryDone && activeTab === 'adatbazis') {
+    firstQueryDone = true;
+    send('first');
+  }
+}
+
 // --- state transitions ------------------------------------------------------
 
 function onReady(msg) {
@@ -177,7 +188,7 @@ function onReady(msg) {
   hideAppLoading();
   setControlsDisabled(false);
   applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
-  send('first');
+  runFirstQueryIfNeeded(); // only queries if the Adatbázis tab is already showing
 }
 
 function onResult(msg) {
@@ -512,7 +523,10 @@ function setActiveTab(tab, { updateUrl = true } = {}) {
   els.tabAdatbazis.tabIndex = isDb ? 0 : -1;
   els.panelNyitolap.hidden = isDb;
   els.panelAdatbazis.hidden = !isDb;
-  if (isDb) initDatabase(); // start the worker on first open
+  if (isDb) {
+    initDatabase(); // start the worker on first open (idempotent)
+    runFirstQueryIfNeeded(); // if the DB was preloaded, run the deferred first query now
+  }
   if (updateUrl) updateHash();
 }
 
@@ -546,11 +560,13 @@ els.tabs.addEventListener('keydown', (e) => {
 // Deep-link: reflect tab + filters from the URL (shared link, manual edit, Back/Forward).
 window.addEventListener('hashchange', () => {
   const tab = tabFromHash();
-  setActiveTab(tab, { updateUrl: false });
   if (tab === 'adatbazis' && state.ready) {
+    // Apply the new hash's filters before switching so we don't fire a stale query.
     applyHashFiltersToState();
-    send('first');
+    firstQueryDone = true;
   }
+  setActiveTab(tab, { updateUrl: false });
+  if (tab === 'adatbazis' && state.ready) send('first');
 });
 
 // Render the landing page from landing.md (trusted, author-authored Markdown).
@@ -558,3 +574,15 @@ els.landing.innerHTML = marked.parse(landingMarkdown);
 
 setControlsDisabled(true);
 setActiveTab(tabFromHash(), { updateUrl: false });
+
+// Preload the database in the background while the user reads the landing page,
+// so opening Adatbázis is instant. The first query is deferred until that tab is
+// actually shown (runFirstQueryIfNeeded), so nothing renders or announces early.
+if (activeTab !== 'adatbazis') {
+  const preloadDatabase = () => initDatabase();
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(preloadDatabase, { timeout: 2000 });
+  } else {
+    setTimeout(preloadDatabase, 1200);
+  }
+}
