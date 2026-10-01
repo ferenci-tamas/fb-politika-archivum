@@ -280,6 +280,8 @@ function formatErrorMessage(msg) {
 // --- control population -----------------------------------------------------
 
 function populateAuthors(authors) {
+  // Clear the placeholder option from index.html so "Minden szerző" is not doubled.
+  els.author.replaceChildren();
   const frag = document.createDocumentFragment();
   const all = document.createElement('option');
   all.value = '';
