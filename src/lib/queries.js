@@ -64,7 +64,7 @@ function ftsTableName(view) {
 // with an author. The hint makes the author equality (or the time range) drive
 // the scan and turns the match subquery into a bloom filter.
 function postsIndexHint(view) {
-  return view.authorId != null
+  return view.authorIds && view.authorIds.length
     ? 'INDEXED BY idx_posts_author_time'
     : 'INDEXED BY idx_posts_time';
 }
@@ -81,9 +81,10 @@ function basePostsPredicate(view, { includeAuthor = true } = {}) {
     parts.push('time < ?');
     binds.push(view.dateTo);
   }
-  if (includeAuthor && view.authorId != null) {
-    parts.push('authorId = ?');
-    binds.push(view.authorId);
+  if (includeAuthor && view.authorIds && view.authorIds.length) {
+    // OR over the selected authors.
+    parts.push(`authorId IN (${view.authorIds.map(() => '?').join(', ')})`);
+    binds.push(...view.authorIds);
   }
   if (view.match != null) {
     parts.push(`id IN (SELECT rowid FROM ${ftsTableName(view)} WHERE ${ftsTableName(view)} MATCH ?)`);
@@ -96,9 +97,10 @@ function basePostsPredicate(view, { includeAuthor = true } = {}) {
 
 export function countView(db, view, meta, authorsById) {
   if (view.idLo >= view.idHi) return 0;
+  const authorIds = view.authorIds || [];
 
   if (view.match != null) {
-    if (view.authorId == null) {
+    if (authorIds.length === 0) {
       // FTS doclist count with a rowid (date) window — ~1ms even for common terms.
       return Number(
         db.selectValue(
@@ -113,10 +115,11 @@ export function countView(db, view, meta, authorsById) {
     );
   }
 
-  if (view.authorId != null) {
+  if (authorIds.length > 0) {
     const fullRange = view.dateFrom == null && view.dateTo == null;
-    if (fullRange && authorsById && authorsById.has(view.authorId)) {
-      return authorsById.get(view.authorId).post_count;
+    if (fullRange && authorsById) {
+      // OR over authors: the total is the sum of their precomputed post counts.
+      return authorIds.reduce((sum, id) => sum + ((authorsById.get(id) || {}).post_count || 0), 0);
     }
     const { parts, binds } = basePostsPredicate(view);
     return Number(
@@ -167,8 +170,8 @@ function scanAuthor(db, view, scanDir, boundary, limit) {
   const backward = scanDir === 'backward';
   const out = [];
 
-  const runPhase = (extraParts, extraBinds, orderBy, phaseLimit) => {
-    const { parts, binds } = basePostsPredicate(view);
+  const runPhase = (extraParts, extraBinds, orderBy, phaseLimit, includeAuthor) => {
+    const { parts, binds } = basePostsPredicate(view, { includeAuthor });
     parts.push(...extraParts);
     binds.push(...extraBinds);
     binds.push(phaseLimit);
@@ -183,8 +186,10 @@ function scanAuthor(db, view, scanDir, boundary, limit) {
   };
 
   if (!boundary) {
+    // The base author-set restriction (authorId IN …) keeps it to the selected
+    // authors; the covering index already yields (authorId, time) order.
     const orderBy = backward ? 'authorId DESC, time ASC, id ASC' : 'authorId, time DESC, id DESC';
-    return runPhase([], [], orderBy, limit);
+    return runPhase([], [], orderBy, limit, true);
   }
 
   const a = boundary.authorId;
@@ -192,19 +197,20 @@ function scanAuthor(db, view, scanDir, boundary, limit) {
   const r = boundary.id;
 
   if (!backward) {
-    // Rest of the current author (older), then following authors.
-    const p1 = runPhase(['authorId = ?', '(time < ? OR (time = ? AND id < ?))'], [a, t, t, r], 'time DESC, id DESC', limit);
+    // Rest of the current author (older) — authorId = a alone — then the
+    // following selected authors (set restriction via the base IN).
+    const p1 = runPhase(['authorId = ?', '(time < ? OR (time = ? AND id < ?))'], [a, t, t, r], 'time DESC, id DESC', limit, false);
     out.push(...p1);
     if (out.length < limit) {
-      const p2 = runPhase(['authorId > ?'], [a], 'authorId, time DESC, id DESC', limit - out.length);
+      const p2 = runPhase(['authorId > ?'], [a], 'authorId, time DESC, id DESC', limit - out.length, true);
       out.push(...p2);
     }
   } else {
-    // Rest of the current author (newer), then previous authors.
-    const p1 = runPhase(['authorId = ?', '(time > ? OR (time = ? AND id > ?))'], [a, t, t, r], 'time ASC, id ASC', limit);
+    // Rest of the current author (newer), then previous selected authors.
+    const p1 = runPhase(['authorId = ?', '(time > ? OR (time = ? AND id > ?))'], [a, t, t, r], 'time ASC, id ASC', limit, false);
     out.push(...p1);
     if (out.length < limit) {
-      const p2 = runPhase(['authorId < ?'], [a], 'authorId DESC, time ASC, id ASC', limit - out.length);
+      const p2 = runPhase(['authorId < ?'], [a], 'authorId DESC, time ASC, id ASC', limit - out.length, true);
       out.push(...p2);
     }
   }
@@ -216,7 +222,7 @@ function runScan(db, view, scanDir, boundary, limit) {
     return scanAuthor(db, view, scanDir, boundary, limit);
   }
   const descending = (view.sort === SORTS.DATE_DESC) === (scanDir === 'forward');
-  if (view.match != null && view.authorId == null) {
+  if (view.match != null && !(view.authorIds && view.authorIds.length)) {
     return scanDateFtsDirect(db, view, descending, boundary, limit);
   }
   return scanDatePosts(db, view, descending, boundary, limit);

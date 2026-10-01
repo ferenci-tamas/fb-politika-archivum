@@ -198,10 +198,13 @@ main {
   color: var(--text);
   min-height: 38px;
 }
-/* Searchable author picker (combobox) */
+/* Searchable, multi-select author picker (combobox) */
 .combobox {
   position: relative;
   min-width: 220px;
+}
+.combo-input-row {
+  position: relative;
 }
 .combobox input {
   width: 100%;
@@ -240,25 +243,76 @@ main {
 }
 .combo-option,
 .combo-empty {
-  padding: 7px 10px;
   border-radius: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .combo-option {
+  position: relative;
+  padding: 7px 10px 7px 28px;
   cursor: pointer;
 }
-.combo-option:hover,
-.combo-option.active {
-  background: var(--surface-alt);
+.combo-option::before {
+  position: absolute;
+  left: 10px;
+  color: var(--accent);
+  font-weight: 700;
 }
 .combo-option[aria-selected='true'] {
   font-weight: 600;
   color: var(--accent);
 }
+.combo-option[aria-selected='true']::before {
+  content: '✓';
+}
+.combo-option:hover,
+.combo-option.active {
+  background: var(--surface-alt);
+}
 .combo-empty {
+  padding: 7px 10px;
   color: var(--muted);
+}
+/* Selected-author chips */
+.combo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 10px;
+  max-width: 100%;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+.chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 50%;
+  font-size: 1rem;
+  line-height: 1;
+  min-height: 0;
+  cursor: pointer;
+}
+.chip-remove:hover {
+  background: var(--border);
+  color: var(--text);
 }
 
 button {

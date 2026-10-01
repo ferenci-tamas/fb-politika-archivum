@@ -27,6 +27,7 @@ const els = {
   authorCombobox: $('author-combobox'),
   authorInput: $('author-input'),
   authorListbox: $('author-listbox'),
+  authorChips: $('author-chips'),
   authorClear: $('author-clear'),
   dateFrom: $('date-from'),
   dateTo: $('date-to'),
@@ -53,7 +54,7 @@ const state = {
   // filters / view
   search: '',
   accentSensitive: false,
-  authorId: null,
+  authorIds: [],
   dateFrom: null,
   dateTo: null,
   sort: SORTS.DATE_DESC,
@@ -106,7 +107,7 @@ function buildViewParams() {
   return {
     search: state.search,
     accentSensitive: state.accentSensitive,
-    authorId: state.authorId,
+    authorIds: state.authorIds,
     dateFrom: state.dateFrom,
     dateTo: state.dateTo,
     sort: state.sort,
@@ -139,11 +140,12 @@ function onReady(msg) {
     container: els.authorCombobox,
     input: els.authorInput,
     listbox: els.authorListbox,
+    chips: els.authorChips,
     clearButton: els.authorClear,
     authors: msg.authors,
     formatCount,
-    onChange: (authorId) => {
-      state.authorId = authorId;
+    onChange: (authorIds) => {
+      state.authorIds = authorIds;
       send('first');
     }
   });
@@ -375,7 +377,7 @@ els.filtersClear.addEventListener('click', () => {
   els.searchClear.hidden = true;
   els.accent.checked = false;
   if (authorPicker) authorPicker.reset();
-  state.authorId = null;
+  state.authorIds = [];
   els.dateFrom.value = '';
   els.dateTo.value = '';
   els.sort.value = SORTS.DATE_DESC;

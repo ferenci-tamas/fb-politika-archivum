@@ -1,7 +1,9 @@
-// A lightweight, accessible searchable author picker: an editable combobox with
-// a listbox popup (per the WAI-ARIA combobox pattern), built over the already
-// loaded 106-author list — it never scans posts. The matching helpers are pure
-// and unit-tested; the controller touches the DOM only when called.
+// A lightweight, accessible, multi-select searchable author picker: an editable
+// combobox with a listbox popup (per the WAI-ARIA combobox pattern) plus removable
+// chips for the chosen authors. Selecting authors is additive and combined with OR
+// in the query. It is built over the already-loaded 106-author list and never
+// scans posts. The matching helpers are pure and unit-tested; the controller
+// touches the DOM only when called.
 
 /** Lowercase and strip diacritics so "ader" matches "Áder" and "koszeg" "Kőszeg". */
 export function normalizeForSearch(s) {
@@ -19,35 +21,30 @@ export function filterAuthors(authors, query) {
 }
 
 /**
- * Wire up the combobox.
+ * Wire up the multi-select combobox.
  * @param {object} opts
  * @param {HTMLElement} opts.container the .combobox wrapper
  * @param {HTMLInputElement} opts.input
  * @param {HTMLElement} opts.listbox the <ul role="listbox">
+ * @param {HTMLElement} opts.chips the chips container
  * @param {HTMLButtonElement} opts.clearButton
  * @param {Array<{authorId:number,authorname:string,post_count:number}>} opts.authors
  * @param {(n:number)=>string} opts.formatCount
- * @param {(authorId:number|null)=>void} opts.onChange
+ * @param {(authorIds:number[])=>void} opts.onChange called with the selected ids
  * @returns {{reset:()=>void}}
  */
-export function createAuthorCombobox({ container, input, listbox, clearButton, authors, formatCount, onChange }) {
-  const ALL = { authorId: null, authorname: 'Minden szerző' };
+export function createAuthorCombobox({ container, input, listbox, chips, clearButton, authors, formatCount, onChange }) {
+  const authorsById = new Map(authors.map((a) => [a.authorId, a]));
+  const selected = new Set();
   let open = false;
   let items = [];
   let activeIndex = -1;
-  let selectedId = null;
 
-  const optionId = (a) => (a.authorId == null ? 'author-opt-all' : `author-opt-${a.authorId}`);
-
-  // When no query is typed, offer the "all authors" reset at the top; while
-  // filtering, show only matches so the top item (and Enter) is the best match.
-  const computeItems = (query) => {
-    const matches = filterAuthors(authors, query);
-    return query.trim() ? matches : [ALL, ...matches];
-  };
+  const optionId = (a) => `author-opt-${a.authorId}`;
+  const emitChange = () => onChange([...selected]);
 
   function render(query) {
-    items = computeItems(query);
+    items = filterAuthors(authors, query);
     listbox.replaceChildren();
     if (items.length === 0) {
       const li = document.createElement('li');
@@ -64,12 +61,44 @@ export function createAuthorCombobox({ container, input, listbox, clearButton, a
       li.id = optionId(a);
       li.className = 'combo-option';
       li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', selected.has(a.authorId) ? 'true' : 'false');
       li.dataset.index = String(i);
-      li.textContent = a.authorId == null ? a.authorname : `${a.authorname} (${formatCount(a.post_count)})`;
-      if (a.authorId === selectedId) li.setAttribute('aria-selected', 'true');
+      li.textContent = `${a.authorname} (${formatCount(a.post_count)})`;
       frag.append(li);
     });
     listbox.append(frag);
+  }
+
+  function renderChips() {
+    chips.replaceChildren();
+    const ids = [...selected].sort((a, b) => a - b); // authorId order == Hungarian alphabetical
+    if (ids.length === 0) {
+      chips.hidden = true;
+      return;
+    }
+    chips.hidden = false;
+    const frag = document.createDocumentFragment();
+    for (const id of ids) {
+      const author = authorsById.get(id);
+      if (!author) continue;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const label = document.createElement('span');
+      label.textContent = author.authorname;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'chip-remove';
+      remove.textContent = '×';
+      remove.dataset.id = String(id);
+      remove.setAttribute('aria-label', `${author.authorname} eltávolítása`);
+      chip.append(label, remove);
+      frag.append(chip);
+    }
+    chips.append(frag);
+  }
+
+  function updateClearVisibility() {
+    clearButton.hidden = selected.size === 0 && input.value.trim() === '';
   }
 
   function setActive(index) {
@@ -92,7 +121,7 @@ export function createAuthorCombobox({ container, input, listbox, clearButton, a
     listbox.hidden = false;
     input.setAttribute('aria-expanded', 'true');
     open = true;
-    setActive(query.trim() ? (items.length ? 0 : -1) : items.findIndex((a) => a.authorId === selectedId));
+    setActive(query.trim() && items.length ? 0 : -1);
   }
 
   function closeList() {
@@ -103,29 +132,27 @@ export function createAuthorCombobox({ container, input, listbox, clearButton, a
     activeIndex = -1;
   }
 
-  function syncInputToSelection() {
-    const selected = authors.find((a) => a.authorId === selectedId);
-    input.value = selected ? selected.authorname : '';
-    clearButton.hidden = !selected;
-  }
-
-  function select(author) {
-    selectedId = author.authorId;
-    input.value = author.authorId == null ? '' : author.authorname;
-    clearButton.hidden = author.authorId == null;
-    closeList();
-    onChange(selectedId);
+  // Toggle membership; selecting is additive, so the list stays open and the
+  // filter text is cleared to make picking several authors fluent.
+  function toggle(author) {
+    if (!author) return;
+    if (selected.has(author.authorId)) selected.delete(author.authorId);
+    else selected.add(author.authorId);
+    input.value = '';
+    renderChips();
+    updateClearVisibility();
+    render('');
+    const idx = items.findIndex((a) => a.authorId === author.authorId);
+    setActive(idx);
+    emitChange();
   }
 
   input.addEventListener('click', () => {
-    if (!open) {
-      input.select();
-      openList('');
-    }
+    if (!open) openList(input.value);
   });
 
   input.addEventListener('input', () => {
-    clearButton.hidden = input.value.trim() === '' && selectedId == null;
+    updateClearVisibility();
     openList(input.value);
   });
 
@@ -142,13 +169,25 @@ export function createAuthorCombobox({ container, input, listbox, clearButton, a
         break;
       case 'Enter':
         e.preventDefault();
-        if (open && activeIndex >= 0 && items[activeIndex]) select(items[activeIndex]);
+        if (open && activeIndex >= 0) toggle(items[activeIndex]);
         break;
       case 'Escape':
         if (open) {
           e.preventDefault();
+          input.value = '';
+          updateClearVisibility();
           closeList();
-          syncInputToSelection();
+        }
+        break;
+      case 'Backspace':
+        // Remove the last chip when the input is empty.
+        if (input.value === '' && selected.size > 0) {
+          const ids = [...selected].sort((a, b) => a - b);
+          selected.delete(ids[ids.length - 1]);
+          renderChips();
+          updateClearVisibility();
+          if (open) render(input.value);
+          emitChange();
         }
         break;
       default:
@@ -156,34 +195,48 @@ export function createAuthorCombobox({ container, input, listbox, clearButton, a
     }
   });
 
-  // Keep focus on the input while pressing inside the listbox, otherwise the
-  // mousedown blurs the input and the container's focusout handler closes (and
-  // hides) the list before the click can select. preventDefault keeps focus so
-  // the click below still fires and selects.
+  // Keep focus on the input while pressing inside the listbox so the click can
+  // toggle before the container's focusout handler would close it.
   listbox.addEventListener('mousedown', (e) => e.preventDefault());
   listbox.addEventListener('click', (e) => {
     const li = e.target.closest('.combo-option');
     if (!li) return;
-    select(items[Number(li.dataset.index)]);
+    toggle(items[Number(li.dataset.index)]);
   });
 
-  // Close when focus leaves the whole combobox (e.g. Tab away).
+  chips.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chip-remove');
+    if (!btn) return;
+    selected.delete(Number(btn.dataset.id));
+    renderChips();
+    updateClearVisibility();
+    if (open) render(input.value);
+    emitChange();
+  });
+
   container.addEventListener('focusout', (e) => {
     if (!container.contains(e.relatedTarget)) {
+      input.value = '';
+      updateClearVisibility();
       closeList();
-      syncInputToSelection();
     }
   });
 
   clearButton.addEventListener('click', () => {
-    select(ALL);
+    selected.clear();
+    input.value = '';
+    renderChips();
+    updateClearVisibility();
+    closeList();
     input.focus();
+    emitChange();
   });
 
   return {
     reset() {
-      selectedId = null;
+      selected.clear();
       input.value = '';
+      renderChips();
       clearButton.hidden = true;
       closeList();
     }

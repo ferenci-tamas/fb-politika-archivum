@@ -43,7 +43,9 @@ function resolveView(raw) {
   const view = {
     dateFrom: Number.isFinite(raw.dateFrom) ? raw.dateFrom : null,
     dateTo: Number.isFinite(raw.dateTo) ? raw.dateTo : null,
-    authorId: Number.isFinite(raw.authorId) ? raw.authorId : null,
+    authorIds: Array.isArray(raw.authorIds)
+      ? [...new Set(raw.authorIds.filter((n) => Number.isFinite(n)))]
+      : [],
     match: match === '' ? null : match,
     ftsTable: raw.accentSensitive ? FTS_TABLE.sensitive : FTS_TABLE.folded,
     sort: VALID_SORTS.has(raw.sort) ? raw.sort : SORTS.DATE_DESC,

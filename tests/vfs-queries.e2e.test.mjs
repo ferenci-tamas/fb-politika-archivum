@@ -70,7 +70,7 @@ if (!manifest) {
 
   const baseView = (over = {}) => {
     const v = {
-      dateFrom: null, dateTo: null, authorId: null, match: null,
+      dateFrom: null, dateTo: null, authorIds: [], match: null,
       ftsTable: FTS_TABLE.folded, sort: SORTS.DATE_DESC, pageSize: 50,
       idLo: meta.min_id, idHi: meta.max_id + 1,
       ...over
@@ -149,10 +149,40 @@ if (!manifest) {
 
   test('author filter uses the precomputed count and returns only that author', () => {
     const author = authors[4];
-    const v = baseView({ authorId: author.authorId });
+    const v = baseView({ authorIds: [author.authorId] });
     assert.equal(Q.countView(db, v, meta, authorsById), author.post_count);
     const p = Q.fetchPage(db, v, { direction: 'first', cursor: null });
     assert.ok(p.rows.every((r) => r.authorId === author.authorId));
+  });
+
+  test('multi-author OR (date sort): count is the sum, keyset matches an OFFSET reference', () => {
+    const ids = [authors[2].authorId, authors[4].authorId, authors[6].authorId];
+    const set = new Set(ids);
+    const v = baseView({ authorIds: ids });
+    const expectedCount = ids.reduce((sum, id) => sum + authorsById.get(id).post_count, 0);
+    assert.equal(Q.countView(db, v, meta, authorsById), expectedCount);
+
+    const p = Q.fetchPage(db, v, { direction: 'first', cursor: null });
+    assert.ok(p.rows.every((r) => set.has(r.authorId)));
+
+    const placeholders = ids.map(() => '?').join(',');
+    const ref = db
+      .selectObjects(`SELECT id FROM posts WHERE authorId IN (${placeholders}) ORDER BY time DESC, id DESC LIMIT 200`, ids)
+      .map((r) => Number(r.id));
+    assert.deepEqual(walk(v, 4), ref);
+  });
+
+  test('multi-author OR (author sort): keyset matches an OFFSET reference', () => {
+    const ids = [authors[2].authorId, authors[4].authorId, authors[6].authorId];
+    const v = baseView({ authorIds: ids, sort: SORTS.AUTHOR });
+    const placeholders = ids.map(() => '?').join(',');
+    const ref = db
+      .selectObjects(
+        `SELECT id FROM posts INDEXED BY idx_posts_author_time WHERE authorId IN (${placeholders}) ORDER BY authorId, time DESC, id DESC LIMIT 200`,
+        ids
+      )
+      .map((r) => Number(r.id));
+    assert.deepEqual(walk(v, 4), ref);
   });
 
   test('date range count equals the rowid window width', () => {
@@ -173,7 +203,7 @@ if (!manifest) {
 
   test('combined search + author stays efficient (bounded fetch)', () => {
     const before = vfs.getStats().bytesFetched;
-    const v = baseView({ match: buildFtsMatch('kormány'), authorId: authors[4].authorId });
+    const v = baseView({ match: buildFtsMatch('kormány'), authorIds: [authors[4].authorId, authors[2].authorId] });
     Q.countView(db, v, meta, authorsById);
     Q.fetchPage(db, v, { direction: 'first', cursor: null });
     const fetched = vfs.getStats().bytesFetched - before;
