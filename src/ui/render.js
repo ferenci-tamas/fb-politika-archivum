@@ -7,15 +7,36 @@ import { formatHuDateTime } from '../lib/format.js';
 import { imageUrl } from '../lib/sanitize.js';
 
 const TABLE_COLUMNS = 6;
-// Show the expand control when a preview would likely be clipped.
-const LONG_TEXT_CHARS = 180;
-const LONG_TEXT_LINES = 4;
 
 export function renderRows(tbody, rows, { imagesBaseUrl }) {
   clear(tbody);
   const frag = document.createDocumentFragment();
   for (const row of rows) frag.append(buildRow(row, imagesBaseUrl));
   tbody.append(frag);
+  // Decide the expand control from real layout: only text that is actually
+  // clipped at the 4-line clamp gets a "Megnyitás" button, so expanding never
+  // leaves the text unchanged. All heights are read first, then mutated, to
+  // avoid layout thrashing.
+  addExpandControls(tbody);
+}
+
+function addExpandControls(tbody) {
+  const divs = Array.from(tbody.querySelectorAll('.post-text.clamped'));
+  const overflowing = divs.map((div) => div.scrollHeight > div.clientHeight + 1);
+  divs.forEach((div, i) => {
+    if (overflowing[i]) {
+      div.after(
+        el('button', {
+          type: 'button',
+          class: 'expand-toggle',
+          'aria-expanded': 'false',
+          'aria-controls': div.id
+        }, 'Megnyitás')
+      );
+    } else {
+      div.classList.remove('clamped');
+    }
+  });
 }
 
 export function renderMessageRow(tbody, message) {
@@ -47,22 +68,10 @@ function buildDate(time) {
 
 function buildTextCell(row) {
   const td = el('td', { class: 'col-text' });
-  const text = row.text || '';
-  const newlines = (text.match(/\n/g) || []).length;
-  const isLong = text.length > LONG_TEXT_CHARS || newlines >= LONG_TEXT_LINES;
-  const textId = `text-${row.id}`;
-  const div = el('div', { class: isLong ? 'post-text clamped' : 'post-text', id: textId, text });
+  // Always clamp initially; renderRows() measures real overflow after insertion
+  // and only then keeps the clamp and adds the expand control.
+  const div = el('div', { class: 'post-text clamped', id: `text-${row.id}`, text: row.text || '' });
   td.append(div);
-  if (isLong) {
-    td.append(
-      el('button', {
-        type: 'button',
-        class: 'expand-toggle',
-        'aria-expanded': 'false',
-        'aria-controls': textId
-      }, 'Megnyitás')
-    );
-  }
   return td;
 }
 
