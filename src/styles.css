@@ -15,6 +15,7 @@
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
   --maxw: 1400px;
+  --tabbar-h: 48px;
   font-synthesis: none;
   color-scheme: light dark;
 }
@@ -117,10 +118,124 @@ main {
   padding: 0 20px 40px;
 }
 
+/* Tabs ---------------------------------------------------------------------- */
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  gap: 4px;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  padding: 12px 18px;
+  min-height: 48px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab:hover:not([aria-selected='true']) {
+  color: var(--text);
+}
+
+/* Tab panels ---------------------------------------------------------------- */
+.panel {
+  padding-top: 8px;
+}
+.panel-db {
+  position: relative;
+  min-height: 60vh;
+}
+
+/* Landing page (rendered from landing.md) ----------------------------------- */
+.landing {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 12px 0 32px;
+  line-height: 1.7;
+}
+.landing > :first-child {
+  margin-top: 0;
+}
+.landing h1 {
+  font-size: 1.6rem;
+}
+.landing h2 {
+  font-size: 1.3rem;
+}
+.landing h3 {
+  font-size: 1.1rem;
+}
+.landing h1,
+.landing h2,
+.landing h3 {
+  line-height: 1.25;
+  margin: 1.5em 0 0.5em;
+}
+.landing p {
+  margin: 0.85em 0;
+}
+.landing a {
+  color: var(--accent);
+}
+.landing ul,
+.landing ol {
+  padding-left: 1.4em;
+}
+.landing li {
+  margin: 0.3em 0;
+}
+.landing img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+.landing code {
+  background: var(--surface-alt);
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.landing pre {
+  background: var(--surface-alt);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.landing pre code {
+  background: none;
+  padding: 0;
+}
+.landing blockquote {
+  margin: 1em 0;
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.landing hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5em 0;
+}
+
 /* Controls ------------------------------------------------------------------ */
 .controls {
   position: sticky;
-  top: 0;
+  top: var(--tabbar-h);
   z-index: 20;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -611,13 +726,13 @@ button:disabled {
 
 /* Initial loading overlay --------------------------------------------------- */
 .app-loading {
-  position: fixed;
+  position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(2px);
   display: grid;
   place-items: center;
-  z-index: 100;
+  z-index: 45;
 }
 .app-loading-box {
   background: var(--surface);
@@ -662,6 +777,9 @@ button:disabled {
   }
   main {
     padding: 0 12px 32px;
+  }
+  .tabs {
+    padding: 0 12px;
   }
   .field {
     flex: 1 1 140px;

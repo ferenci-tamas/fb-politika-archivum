@@ -12,7 +12,8 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@sqlite.org/sqlite-wasm": "3.53.4-build1"
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1",
+    "marked": "^18.0.14"
   },
   "devDependencies": {
     "vite": "^8.3.2"

@@ -13,8 +13,12 @@ import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToD
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
+import { marked } from 'marked';
+import landingMarkdown from '../landing.md?raw';
 
-const worker = new Worker(new URL('./worker/db-worker.js', import.meta.url), { type: 'module' });
+let worker = null;
+let dbInitStarted = false;
+let activeTab = 'nyitolap';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -22,6 +26,12 @@ const els = {
   appLoadingText: $('app-loading-text'),
   appLoadingError: $('app-loading-error'),
   reload: $('app-reload'),
+  tabs: $('tabs'),
+  tabNyitolap: $('tab-nyitolap'),
+  tabAdatbazis: $('tab-adatbazis'),
+  panelNyitolap: $('panel-nyitolap'),
+  panelAdatbazis: $('panel-adatbazis'),
+  landing: $('landing'),
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
@@ -81,31 +91,36 @@ let authorIdToName = new Map();
 let authorNameToId = new Map();
 const SORT_VALUES = Object.values(SORTS);
 
-// --- worker messaging -------------------------------------------------------
+// --- database worker (created lazily when the Adatbázis tab is first opened) -
 
-worker.onmessage = (event) => {
-  const msg = event.data;
-  switch (msg.type) {
-    case 'ready':
-      onReady(msg);
-      break;
-    case 'init-error':
-      onInitError(msg);
-      break;
-    case 'result':
-      if (msg.reqId === state.reqId) onResult(msg);
-      break;
-    case 'error':
-      if (msg.reqId === state.reqId) onQueryError(msg);
-      break;
-    default:
-      break;
-  }
-};
-
-worker.onerror = (e) => {
-  showInitError(`A háttérfolyamat hibát jelzett: ${e.message || 'ismeretlen hiba'}`);
-};
+function initDatabase() {
+  if (dbInitStarted) return;
+  dbInitStarted = true;
+  showAppLoading();
+  worker = new Worker(new URL('./worker/db-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = (event) => {
+    const msg = event.data;
+    switch (msg.type) {
+      case 'ready':
+        onReady(msg);
+        break;
+      case 'init-error':
+        onInitError(msg);
+        break;
+      case 'result':
+        if (msg.reqId === state.reqId) onResult(msg);
+        break;
+      case 'error':
+        if (msg.reqId === state.reqId) onQueryError(msg);
+        break;
+      default:
+        break;
+    }
+  };
+  worker.onerror = (e) => {
+    showInitError(`A háttérfolyamat hibát jelzett: ${e.message || 'ismeretlen hiba'}`);
+  };
+}
 
 function buildViewParams() {
   return {
@@ -120,6 +135,7 @@ function buildViewParams() {
 }
 
 function send(direction) {
+  if (!worker) return;
   let cursor = null;
   if (direction === 'next') cursor = state.lastKey;
   else if (direction === 'prev') cursor = state.firstKey;
@@ -158,9 +174,9 @@ function onReady(msg) {
     }
   });
   setupDateBounds(msg.meta);
-  els.appLoading.hidden = true;
+  hideAppLoading();
   setControlsDisabled(false);
-  applyHashToState(); // restore filters/search from a shared or bookmarked URL
+  applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
   send('first');
 }
 
@@ -308,6 +324,14 @@ function showInitError(message) {
   els.appLoading.hidden = false;
 }
 
+function showAppLoading() {
+  els.appLoading.hidden = false;
+}
+
+function hideAppLoading() {
+  els.appLoading.hidden = true;
+}
+
 function formatErrorMessage(msg) {
   if (msg.kind === 'range-not-supported') {
     return 'A kiszolgáló nem támogatja a HTTP-tartománykéréseket (206 helyett 200 választ adott). Az archívum így nem tölthető be.';
@@ -341,22 +365,26 @@ function setControlsDisabled(disabled) {
 // replaceState avoids flooding history and does not fire hashchange (no loop).
 
 function updateHash() {
-  const hash = encodeViewToHash(
-    {
-      search: state.search,
-      accentSensitive: state.accentSensitive,
-      authorNames: state.authorIds.map((id) => authorIdToName.get(id)).filter(Boolean),
-      dateFrom: els.dateFrom.value,
-      dateTo: els.dateTo.value,
-      sort: state.sort,
-      pageSize: state.pageSize
-    },
-    { defaultSort: SORTS.DATE_DESC, defaultPageSize: DEFAULT_PAGE_SIZE }
-  );
-  history.replaceState(null, '', hash ? `#${hash}` : location.pathname + location.search);
+  let body = '';
+  if (activeTab === 'adatbazis') {
+    const query = encodeViewToHash(
+      {
+        search: state.search,
+        accentSensitive: state.accentSensitive,
+        authorNames: state.authorIds.map((id) => authorIdToName.get(id)).filter(Boolean),
+        dateFrom: els.dateFrom.value,
+        dateTo: els.dateTo.value,
+        sort: state.sort,
+        pageSize: state.pageSize
+      },
+      { defaultSort: SORTS.DATE_DESC, defaultPageSize: DEFAULT_PAGE_SIZE }
+    );
+    body = query ? `tab=adatbazis&${query}` : 'tab=adatbazis';
+  }
+  history.replaceState(null, '', body ? `#${body}` : location.pathname + location.search);
 }
 
-function applyHashToState() {
+function applyHashFiltersToState() {
   const v = decodeHashToView(location.hash, {
     validSorts: SORT_VALUES,
     pageSizes: FEED_PAGE_SIZES,
@@ -473,12 +501,60 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => refreshExpandControls(els.body), 150);
 });
 
-// Apply deep-link changes from the URL (shared link opened in-session, manual
-// edit, or Back/Forward to a different hash).
-window.addEventListener('hashchange', () => {
-  if (!state.ready) return;
-  applyHashToState();
-  send('first');
+// --- tabs -------------------------------------------------------------------
+
+function setActiveTab(tab, { updateUrl = true } = {}) {
+  activeTab = tab;
+  const isDb = tab === 'adatbazis';
+  els.tabNyitolap.setAttribute('aria-selected', String(!isDb));
+  els.tabAdatbazis.setAttribute('aria-selected', String(isDb));
+  els.tabNyitolap.tabIndex = isDb ? -1 : 0;
+  els.tabAdatbazis.tabIndex = isDb ? 0 : -1;
+  els.panelNyitolap.hidden = isDb;
+  els.panelAdatbazis.hidden = !isDb;
+  if (isDb) initDatabase(); // start the worker on first open
+  if (updateUrl) updateHash();
+}
+
+// The Adatbázis tab is implied by any query in the hash; otherwise read tab=.
+function tabFromHash() {
+  const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (params.get('tab') === 'adatbazis') return 'adatbazis';
+  const query = encodeViewToHash(
+    decodeHashToView(location.hash, {
+      validSorts: SORT_VALUES,
+      pageSizes: FEED_PAGE_SIZES,
+      defaultSort: SORTS.DATE_DESC,
+      defaultPageSize: DEFAULT_PAGE_SIZE
+    }),
+    { defaultSort: SORTS.DATE_DESC, defaultPageSize: DEFAULT_PAGE_SIZE }
+  );
+  return query ? 'adatbazis' : 'nyitolap';
+}
+
+els.tabNyitolap.addEventListener('click', () => setActiveTab('nyitolap'));
+els.tabAdatbazis.addEventListener('click', () => setActiveTab('adatbazis'));
+els.tabs.addEventListener('keydown', (e) => {
+  if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault();
+    const tab = e.key === 'ArrowRight' || e.key === 'End' ? 'adatbazis' : 'nyitolap';
+    setActiveTab(tab);
+    (tab === 'adatbazis' ? els.tabAdatbazis : els.tabNyitolap).focus();
+  }
 });
 
+// Deep-link: reflect tab + filters from the URL (shared link, manual edit, Back/Forward).
+window.addEventListener('hashchange', () => {
+  const tab = tabFromHash();
+  setActiveTab(tab, { updateUrl: false });
+  if (tab === 'adatbazis' && state.ready) {
+    applyHashFiltersToState();
+    send('first');
+  }
+});
+
+// Render the landing page from landing.md (trusted, author-authored Markdown).
+els.landing.innerHTML = marked.parse(landingMarkdown);
+
 setControlsDisabled(true);
+setActiveTab(tabFromHash(), { updateUrl: false });

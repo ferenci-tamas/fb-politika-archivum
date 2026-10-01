@@ -11,160 +11,171 @@
     <title>Magyar politikai Facebook-archívum</title>
   </head>
   <body>
-    <a class="skip-link" href="#results">Ugrás a találatokhoz</a>
+    <a class="skip-link" href="#tabs">Ugrás a tartalomhoz</a>
 
     <header class="site-header">
       <h1>Magyar politikai Facebook-archívum</h1>
       <p class="subtitle">Közéleti és politikai Facebook-posztok kereshető archívuma, 2008–2026. Összeállította: Ferenci Tamás (<a href="https://www.medstat.hu/" target="_blank" rel="noopener noreferrer">www.medstat.hu</a>).</p>
     </header>
 
+    <div class="tabs" id="tabs" role="tablist" aria-label="Nézetek" tabindex="-1">
+      <button class="tab" id="tab-nyitolap" type="button" role="tab" aria-selected="true" aria-controls="panel-nyitolap">Nyitólap</button>
+      <button class="tab" id="tab-adatbazis" type="button" role="tab" aria-selected="false" aria-controls="panel-adatbazis" tabindex="-1">Adatbázis</button>
+    </div>
+
     <main>
-      <form id="controls" class="controls" role="search" aria-label="Keresés és szűrés" autocomplete="off">
-        <div class="search-row">
-          <div class="search-field">
-            <label class="visually-hidden" for="search">Keresés a posztok szövegében</label>
-            <input
-              type="search"
-              id="search"
-              name="search"
-              placeholder="Keresés a posztokban… (pl. kormány, „orbán viktor”, infláció*)"
-              enterkeyhint="search"
-              spellcheck="false"
-            />
-            <button type="button" id="search-clear" class="search-clear" hidden aria-label="Keresés törlése">
-              ×
-            </button>
-          </div>
-          <label class="accent-toggle">
-            <input type="checkbox" id="accent" />
-            <span>Ékezetérzékeny</span>
-          </label>
-          <details class="search-tips">
-            <summary>Keresési tippek</summary>
-            <div class="search-tips-body">
-              <ul>
-                <li><strong>Több szó</strong> – mindegyiket tartalmaznia kell (de nem feltétlenül egymás mellett). Pl. <code>hiány növekedés</code></li>
-                <li><strong>Vagylagos</strong> – elég az egyik: <code>OR</code> kulcsszóval. Pl. <code>Ukrajna OR ukrán</code></li>
-                <li><strong>Pontos kifejezés</strong> – idézőjelben. Pl. <code>"védett ár"</code></li>
-                <li><strong>Szókezdet</strong> – csillaggal a szó végén. Pl. <code>megszorít*</code></li>
-                <li><strong>Kizárás</strong> – az adott szó ne szerepeljen: mínusszal a szó előtt. Pl. <code>kormány -brüsszel</code></li>
-                <li>A keresés alapból <strong>ékezet- és kisbetű/nagybetű-független</strong>; pontos ékezettel keresés (kör ≠ kor) az <em>Ékezetérzékeny</em> bepipálásával.</li>
-              </ul>
-            </div>
-          </details>
-        </div>
-
-        <div class="filter-row">
-          <div class="field">
-            <label for="author-input">Szerző</label>
-            <div class="combobox" id="author-combobox">
-              <div class="combo-input-row">
-                <input
-                  type="text"
-                  id="author-input"
-                  role="combobox"
-                  aria-expanded="false"
-                  aria-controls="author-listbox"
-                  aria-autocomplete="list"
-                  aria-haspopup="listbox"
-                  autocomplete="off"
-                  spellcheck="false"
-                  placeholder="Szerzők szűrése névre…"
-                />
-                <button type="button" id="author-clear" class="combo-clear" hidden aria-label="Kijelölt szerzők törlése">×</button>
-                <ul id="author-listbox" class="combo-list" role="listbox" aria-label="Szerzők" aria-multiselectable="true" hidden></ul>
-              </div>
-              <div id="author-chips" class="combo-chips" hidden></div>
-            </div>
-          </div>
-          <div class="field">
-            <label for="date-from">Ettől</label>
-            <input type="date" id="date-from" name="date-from" />
-          </div>
-          <div class="field">
-            <label for="date-to">Eddig</label>
-            <input type="date" id="date-to" name="date-to" />
-          </div>
-          <div class="field">
-            <label for="sort">Rendezés</label>
-            <select id="sort" name="sort">
-              <option value="date_desc">Legújabb elöl</option>
-              <option value="date_asc">Legrégebbi elöl</option>
-              <option value="author">Szerző (A→Z)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="page-size">Oldalméret</label>
-            <select id="page-size" name="page-size">
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="250">250</option>
-            </select>
-          </div>
-          <button type="button" id="filters-clear" class="secondary">Szűrők törlése</button>
-        </div>
-      </form>
-
-      <div class="status-bar">
-        <span id="result-count" class="result-count" aria-live="polite"></span>
-        <span id="loading-status" class="loading-status" role="status" aria-live="polite"></span>
-      </div>
-
-      <div id="error-banner" class="error-banner" role="alert" hidden>
-        <span id="error-message"></span>
-        <button type="button" id="error-retry" class="secondary">Újra</button>
-      </div>
-
-      <section id="results" aria-label="Találatok">
-        <div id="table-wrap" class="table-wrap" tabindex="0" role="region" aria-label="Posztok táblázata (vízszintesen görgethető)">
-          <table id="results-table" class="results-table">
-            <thead>
-              <tr>
-                <th scope="col" class="col-author">Szerző</th>
-                <th scope="col" class="col-date">Dátum</th>
-                <th scope="col" class="col-text">Szöveg</th>
-                <th scope="col" class="col-post">Poszt</th>
-                <th scope="col" class="col-links">Linkek</th>
-                <th scope="col" class="col-images">Képek</th>
-              </tr>
-            </thead>
-            <tbody id="results-body"></tbody>
-          </table>
-        </div>
-        <div id="results-loading" class="results-loading" aria-hidden="true" hidden>
-          <div class="spinner"></div>
-        </div>
+      <section id="panel-nyitolap" class="panel" role="tabpanel" aria-labelledby="tab-nyitolap" tabindex="0">
+        <div id="landing" class="landing"></div>
       </section>
 
-      <nav class="pager" aria-label="Lapozás">
-        <button type="button" id="nav-first" class="nav-btn" disabled>
-          <span class="nav-icon" aria-hidden="true">⏮</span><span class="nav-text">Legújabb</span>
-        </button>
-        <button type="button" id="nav-prev" class="nav-btn" disabled>
-          <span class="nav-icon" aria-hidden="true">◀</span><span class="nav-text">Újabb</span>
-        </button>
-        <span id="page-info" class="page-info" aria-live="polite"></span>
-        <button type="button" id="nav-next" class="nav-btn" disabled>
-          <span class="nav-text">Régebbi</span><span class="nav-icon" aria-hidden="true">▶</span>
-        </button>
-        <button type="button" id="nav-last" class="nav-btn" disabled>
-          <span class="nav-text">Legrégebbi</span><span class="nav-icon" aria-hidden="true">⏭</span>
-        </button>
-      </nav>
+      <section id="panel-adatbazis" class="panel panel-db" role="tabpanel" aria-labelledby="tab-adatbazis" tabindex="0" hidden>
+        <form id="controls" class="controls" role="search" aria-label="Keresés és szűrés" autocomplete="off">
+          <div class="search-row">
+            <div class="search-field">
+              <label class="visually-hidden" for="search">Keresés a posztok szövegében</label>
+              <input
+                type="search"
+                id="search"
+                name="search"
+                placeholder="Keresés a posztokban… (pl. kormány, „orbán viktor”, infláció*)"
+                enterkeyhint="search"
+                spellcheck="false"
+              />
+              <button type="button" id="search-clear" class="search-clear" hidden aria-label="Keresés törlése">
+                ×
+              </button>
+            </div>
+            <label class="accent-toggle">
+              <input type="checkbox" id="accent" />
+              <span>Ékezetérzékeny</span>
+            </label>
+            <details class="search-tips">
+              <summary>Keresési tippek</summary>
+              <div class="search-tips-body">
+                <ul>
+                  <li><strong>Több szó</strong> – mindegyiket tartalmaznia kell (de nem feltétlenül egymás mellett). Pl. <code>hiány növekedés</code></li>
+                  <li><strong>Vagylagos</strong> – elég az egyik: <code>OR</code> kulcsszóval. Pl. <code>Ukrajna OR ukrán</code></li>
+                  <li><strong>Pontos kifejezés</strong> – idézőjelben. Pl. <code>"védett ár"</code></li>
+                  <li><strong>Szókezdet</strong> – csillaggal a szó végén. Pl. <code>megszorít*</code></li>
+                  <li><strong>Kizárás</strong> – az adott szó ne szerepeljen: mínusszal a szó előtt. Pl. <code>kormány -brüsszel</code></li>
+                  <li>A keresés alapból <strong>ékezet- és kisbetű/nagybetű-független</strong>; pontos ékezettel keresés (kör ≠ kor) az <em>Ékezetérzékeny</em> bepipálásával.</li>
+                </ul>
+              </div>
+            </details>
+          </div>
 
-      <footer class="site-footer">
-        <p id="fetch-stat" class="fetch-stat"></p>
-      </footer>
+          <div class="filter-row">
+            <div class="field">
+              <label for="author-input">Szerző</label>
+              <div class="combobox" id="author-combobox">
+                <div class="combo-input-row">
+                  <input
+                    type="text"
+                    id="author-input"
+                    role="combobox"
+                    aria-expanded="false"
+                    aria-controls="author-listbox"
+                    aria-autocomplete="list"
+                    aria-haspopup="listbox"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Szerzők szűrése névre…"
+                  />
+                  <button type="button" id="author-clear" class="combo-clear" hidden aria-label="Kijelölt szerzők törlése">×</button>
+                  <ul id="author-listbox" class="combo-list" role="listbox" aria-label="Szerzők" aria-multiselectable="true" hidden></ul>
+                </div>
+                <div id="author-chips" class="combo-chips" hidden></div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="date-from">Ettől</label>
+              <input type="date" id="date-from" name="date-from" />
+            </div>
+            <div class="field">
+              <label for="date-to">Eddig</label>
+              <input type="date" id="date-to" name="date-to" />
+            </div>
+            <div class="field">
+              <label for="sort">Rendezés</label>
+              <select id="sort" name="sort">
+                <option value="date_desc">Legújabb elöl</option>
+                <option value="date_asc">Legrégebbi elöl</option>
+                <option value="author">Szerző (A→Z)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="page-size">Oldalméret</label>
+              <select id="page-size" name="page-size">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+              </select>
+            </div>
+            <button type="button" id="filters-clear" class="secondary">Szűrők törlése</button>
+          </div>
+        </form>
+
+        <div class="status-bar">
+          <span id="result-count" class="result-count" aria-live="polite"></span>
+          <span id="loading-status" class="loading-status" role="status" aria-live="polite"></span>
+        </div>
+
+        <div id="error-banner" class="error-banner" role="alert" hidden>
+          <span id="error-message"></span>
+          <button type="button" id="error-retry" class="secondary">Újra</button>
+        </div>
+
+        <section id="results" aria-label="Találatok">
+          <div id="table-wrap" class="table-wrap" tabindex="0" role="region" aria-label="Posztok táblázata (vízszintesen görgethető)">
+            <table id="results-table" class="results-table">
+              <thead>
+                <tr>
+                  <th scope="col" class="col-author">Szerző</th>
+                  <th scope="col" class="col-date">Dátum</th>
+                  <th scope="col" class="col-text">Szöveg</th>
+                  <th scope="col" class="col-post">Poszt</th>
+                  <th scope="col" class="col-links">Linkek</th>
+                  <th scope="col" class="col-images">Képek</th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+          <div id="results-loading" class="results-loading" aria-hidden="true" hidden>
+            <div class="spinner"></div>
+          </div>
+        </section>
+
+        <nav class="pager" aria-label="Lapozás">
+          <button type="button" id="nav-first" class="nav-btn" disabled>
+            <span class="nav-icon" aria-hidden="true">⏮</span><span class="nav-text">Legújabb</span>
+          </button>
+          <button type="button" id="nav-prev" class="nav-btn" disabled>
+            <span class="nav-icon" aria-hidden="true">◀</span><span class="nav-text">Újabb</span>
+          </button>
+          <span id="page-info" class="page-info" aria-live="polite"></span>
+          <button type="button" id="nav-next" class="nav-btn" disabled>
+            <span class="nav-text">Régebbi</span><span class="nav-icon" aria-hidden="true">▶</span>
+          </button>
+          <button type="button" id="nav-last" class="nav-btn" disabled>
+            <span class="nav-text">Legrégebbi</span><span class="nav-icon" aria-hidden="true">⏭</span>
+          </button>
+        </nav>
+
+        <footer class="site-footer">
+          <p id="fetch-stat" class="fetch-stat"></p>
+        </footer>
+
+        <div id="app-loading" class="app-loading" role="status" aria-live="polite" hidden>
+          <div class="app-loading-box">
+            <div class="spinner" aria-hidden="true"></div>
+            <p id="app-loading-text">Adatbázis előkészítése…</p>
+            <p id="app-loading-error" class="app-loading-error" hidden></p>
+            <button type="button" id="app-reload" class="secondary" hidden>Újratöltés</button>
+          </div>
+        </div>
+      </section>
     </main>
-
-    <div id="app-loading" class="app-loading" role="status" aria-live="polite">
-      <div class="app-loading-box">
-        <div class="spinner" aria-hidden="true"></div>
-        <p id="app-loading-text">Adatbázis előkészítése…</p>
-        <p id="app-loading-error" class="app-loading-error" hidden></p>
-        <button type="button" id="app-reload" class="secondary" hidden>Újratöltés</button>
-      </div>
-    </div>
 
     <script type="module" src="/src/main.js"></script>
 
