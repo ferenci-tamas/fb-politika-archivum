@@ -174,6 +174,56 @@ main {
   white-space: nowrap;
 }
 
+/* Collapsible "Keresési tippek" helper next to the search box */
+.search-tips {
+  position: relative;
+  align-self: center;
+}
+.search-tips > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  user-select: none;
+  list-style: none;
+}
+.search-tips > summary::-webkit-details-marker {
+  display: none;
+}
+.search-tips > summary::after {
+  content: ' ⌄';
+}
+.search-tips[open] > summary::after {
+  content: ' ⌃';
+}
+.search-tips-body {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(420px, 90vw);
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.search-tips-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.search-tips-body li {
+  margin: 4px 0;
+}
+.search-tips-body code {
+  background: var(--surface-alt);
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
 .filter-row {
   display: flex;
   gap: 12px;
