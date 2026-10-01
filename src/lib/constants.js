@@ -18,8 +18,9 @@ export const FTS_TABLE = {
 };
 
 // HTTP range VFS tuning ------------------------------------------------------
-// Caching/fetch granularity. A multiple of the 4096-byte SQLite page size so a
-// page read never straddles a block boundary unnecessarily. 32 KiB = 8 pages.
+// Caching/fetch granularity: 32 KiB, a multiple of the SQLite page size (2 pages
+// at the 16 KiB build, 8 at 4 KiB), so a page read never straddles a block
+// boundary. The actual page size comes from the manifest, not from this value.
 export const BLOCK_SIZE = 32 * 1024;
 
 // Bytes fetched eagerly when the database is opened. VACUUM INTO (section 14 of

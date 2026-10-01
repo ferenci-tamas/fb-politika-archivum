@@ -18,9 +18,11 @@ COMPACT_FILE <- paste0(OUTPUT_FILE, ".compact")
 # SQLite page size in bytes: a power of two from 512 to 65536 (SQLite silently
 # ignores other values). A page is the smallest unit a client fetches over HTTP,
 # so smaller pages waste less transfer per lookup, while larger ones need fewer
-# requests for scans. The parts manifest (section 15) reads it back from the
-# file header.
-PAGE_SIZE <- 4096L
+# requests for scans. The parts manifest (section 15) reads it back from the file
+# header and the browser takes it from the manifest, so changing this needs no
+# frontend change. 16384 makes the file ~5% smaller than 4096 while keeping the
+# b-tree shallow (benchmarked: a minor but free win for this read-only archive).
+PAGE_SIZE <- 16384L
 
 # Full-text indexes over posts.text (external content: the text is stored only
 # once). posts_fts keeps diacritics (kör != kor), posts_fts_folded removes them

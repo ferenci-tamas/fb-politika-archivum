@@ -11,7 +11,7 @@ is no application server.
 
 - **Live site:** https://ferenci-tamas.github.io/fb-politika-archivum/
 - **Data + images:** https://fb-politika-archivum.medstat.hu (Cloudflare R2)
-- **Posts:** 654,375 · **Authors:** 106 · **DB size:** ~724 MB (SQLite, page size 4096)
+- **Posts:** 654,375 · **Authors:** 106 · **DB size:** ~686 MB (SQLite, page size 16384)
 
 ---
 
@@ -236,7 +236,7 @@ disables Jekyll processing.
 ## 9. How HTTP range requests are used
 
 - SQLite asks the VFS for specific byte ranges (a 100-byte header read, then
-  4096-byte page reads). The VFS rounds each read out to 32 KiB blocks and fetches
+  16384-byte page reads). The VFS rounds each read out to 32 KiB blocks and fetches
   only the missing blocks.
 - The synchronous reader ([`src/worker/transport-xhr.js`](src/worker/transport-xhr.js))
   issues `GET` with a `Range: bytes=START-END` header. A `PartMap`
@@ -279,8 +279,8 @@ R2_LIVE_TEST=1 npm test
 
 ## 11. Database size & performance characteristics
 
-- **Size:** ~724 MB (758,960,128 bytes), page size 4096, split into 2 parts
-  (384 MiB + ~340 MiB). 654,375 posts, 131,652 links, 602,009 images, 106 authors.
+- **Size:** ~686 MB, page size 16384 (set by the converter's `PAGE_SIZE`), split
+  into 2 parts (384 MiB + ~302 MiB). 654,375 posts, 131,652 links, 602,009 images, 106 authors.
 - **Startup:** one `latest.json` fetch + one 256 KiB prefetch. The full database is
   never downloaded.
 - **Per interaction:** a page of 50 typically costs a handful of range requests
