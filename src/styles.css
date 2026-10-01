@@ -496,9 +496,13 @@ button:disabled {
   main {
     padding: 0 12px 32px;
   }
-  .field,
-  #author {
+  .field {
     flex: 1 1 140px;
+    min-width: 0;
+  }
+  /* Relax the wide-screen min-width so the field can shrink; do NOT put flex on
+     the select itself — in the column .field that sets flex-basis on the height. */
+  #author {
     min-width: 0;
   }
   .filter-row {
