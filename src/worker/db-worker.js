@@ -24,6 +24,9 @@ import { installRangeVfs } from '../lib/http-vfs.js';
 import { buildFtsMatch } from '../lib/fts-query.js';
 import { parseImages, parseLinks } from '../lib/sanitize.js';
 import * as Q from '../lib/queries.js';
+import { prefetchHydrationPages } from '../lib/btree.js';
+import { makeMultiRangeFetcher } from './multirange.js';
+import { BLOCK_SIZE, MULTIRANGE_PREFETCH, PREFETCH_BUDGET_MS } from '../lib/constants.js';
 
 let db = null;
 let vfs = null;
@@ -31,6 +34,13 @@ let meta = null;
 let authors = null;
 let authorsById = null;
 let ready = false;
+// Set once the database is open; used by the multi-range hydration prefetch.
+let rootPage = 0;
+let usableSize = 0;
+let pageSize = 0;
+let fileSize = 0;
+let fetchBlocks = null;
+let mrBytesTotal = 0;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -96,6 +106,24 @@ async function init() {
     db.exec('PRAGMA temp_store=MEMORY');
     db.exec(`PRAGMA cache_size=-${SQLITE_CACHE_KIB}`);
 
+    // Wiring for the best-effort multi-range hydration prefetch.
+    pageSize = manifest.pageSize;
+    fileSize = manifest.size;
+    rootPage = Number(db.selectValue("SELECT rootpage FROM sqlite_schema WHERE name='posts'"));
+    const header = new Uint8Array(100);
+    vfs.cache.readInto(header, 0, 100);
+    usableSize = pageSize - header[20]; // reserved bytes per page (byte 20 of the file header)
+    fetchBlocks = makeMultiRangeFetcher({
+      partMap,
+      partsBaseUrl,
+      fileSize,
+      blockSize: BLOCK_SIZE,
+      store: (bi, bytes) => {
+        mrBytesTotal += bytes.byteLength;
+        vfs.cache.store(bi, bytes);
+      }
+    });
+
     meta = Q.readMeta(db);
     authors = Q.readAuthors(db);
     authorsById = new Map(authors.map((a) => [a.authorId, a]));
@@ -111,7 +139,7 @@ async function init() {
   }
 }
 
-self.onmessage = (event) => {
+self.onmessage = async (event) => {
   const msg = event.data;
   if (!msg || msg.type !== 'query') return;
 
@@ -122,20 +150,48 @@ self.onmessage = (event) => {
 
   try {
     vfs.clearLastError();
-    const before = vfs.getStats().bytesFetched;
+    const beforeBytes = vfs.getStats().bytesFetched;
+    const beforeMr = mrBytesTotal;
     const view = resolveView(msg.view);
-    const page = Q.fetchPage(db, view, msg.nav);
+    const page = Q.scanPage(db, view, msg.nav);
+
+    // Best-effort: batch-fetch the hydrate pages in ~tree-depth multi-range
+    // requests so the synchronous hydrate below is (mostly) cache hits. Any
+    // failure falls back to the normal per-page synchronous reads.
+    if (MULTIRANGE_PREFETCH && fetchBlocks && page.ids.length > 0) {
+      try {
+        // Race a budget so a slow multi-range request can never add more than
+        // PREFETCH_BUDGET_MS before we fall back to synchronous reads.
+        await Promise.race([
+          prefetchHydrationPages({
+            cache: vfs.cache,
+            fetchBlocks,
+            rootPage,
+            rowids: page.ids,
+            pageSize,
+            usableSize,
+            fileSize,
+            blockSize: BLOCK_SIZE
+          }),
+          new Promise((resolve) => setTimeout(resolve, PREFETCH_BUDGET_MS))
+        ]);
+      } catch {
+        // ignore — the synchronous VFS still backs every read
+      }
+    }
+
+    const rows = Q.hydrateIds(db, page.ids);
     const payload = {
       type: 'result',
       reqId: msg.reqId,
-      rows: page.rows.map(toDisplayRow),
+      rows: rows.map(toDisplayRow),
       pagination: {
         hasPrev: page.hasPrev,
         hasNext: page.hasNext,
         firstKey: page.firstKey,
         lastKey: page.lastKey
       },
-      fetchedBytes: vfs.getStats().bytesFetched - before
+      fetchedBytes: vfs.getStats().bytesFetched - beforeBytes + (mrBytesTotal - beforeMr)
     };
     if (msg.wantCount) payload.count = Q.countView(db, view, meta, authorsById);
     self.postMessage(payload);

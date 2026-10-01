@@ -232,7 +232,7 @@ function runScan(db, view, scanDir, boundary, limit) {
 // One query fetches whole rows for the page's ids, including the embedded
 // images/links JSON, so a 1:N page needs no join and no extra page fetches.
 
-function hydrate(db, ids) {
+export function hydrateIds(db, ids) {
   if (ids.length === 0) return [];
   const rows = db.selectObjects(
     `SELECT ${HYDRATE_COLUMNS} FROM posts WHERE id IN (SELECT value FROM json_each(?))`,
@@ -250,8 +250,8 @@ function hydrate(db, ids) {
  * @param {{direction:'first'|'next'|'prev'|'last', cursor:(object|null)}} nav
  * @returns {{rows:object[], firstKey:object|null, lastKey:object|null, hasPrev:boolean, hasNext:boolean}}
  */
-export function fetchPage(db, view, nav) {
-  const empty = { rows: [], firstKey: null, lastKey: null, hasPrev: false, hasNext: false };
+export function scanPage(db, view, nav) {
+  const empty = { ids: [], firstKey: null, lastKey: null, hasPrev: false, hasNext: false };
   if (view.idLo >= view.idHi) return empty;
 
   const direction = nav.direction;
@@ -263,9 +263,6 @@ export function fetchPage(db, view, nav) {
   const extra = keys.length > view.pageSize;
   if (extra) keys = keys.slice(0, view.pageSize);
   if (scanDir === 'backward') keys.reverse(); // restore canonical display order
-
-  const ids = keys.map((k) => k.id);
-  const rows = hydrate(db, ids);
 
   let hasPrev;
   let hasNext;
@@ -292,10 +289,23 @@ export function fetchPage(db, view, nav) {
   }
 
   return {
-    rows,
+    ids: keys.map((k) => k.id),
     firstKey: keys.length ? keys[0] : null,
     lastKey: keys.length ? keys[keys.length - 1] : null,
     hasPrev,
     hasNext
+  };
+}
+
+// scanPage (index-only, returns ids + pagination) then hydrateIds (fetch rows).
+// The worker runs the optional multi-range prefetch between the two.
+export function fetchPage(db, view, nav) {
+  const page = scanPage(db, view, nav);
+  return {
+    rows: hydrateIds(db, page.ids),
+    firstKey: page.firstKey,
+    lastKey: page.lastKey,
+    hasPrev: page.hasPrev,
+    hasNext: page.hasNext
   };
 }

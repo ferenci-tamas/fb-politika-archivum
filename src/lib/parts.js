@@ -31,6 +31,14 @@ export class PartMap {
     }
   }
 
+  /** Return the part object containing the given absolute byte offset. */
+  partForOffset(offset) {
+    for (const part of this.parts) {
+      if (offset >= part.offset && offset < part.end) return part;
+    }
+    throw new RangeError(`offset ${offset} is outside the file`);
+  }
+
   /**
    * Split an absolute read into per-part slices.
    * @param {number} offset absolute byte offset into the logical file

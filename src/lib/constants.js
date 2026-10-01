@@ -35,3 +35,13 @@ export const MAX_CACHE_BYTES = 96 * 1024 * 1024;
 
 // SQLite's own page cache, in KiB (negative value => KiB in PRAGMA cache_size).
 export const SQLITE_CACHE_KIB = 16 * 1024;
+
+// Best-effort multi-range hydration prefetch: before the (synchronous) hydrate,
+// batch-fetch the b-tree leaf/overflow pages for the page's rows in ~tree-depth
+// multipart/byteranges requests instead of one serialized read per scattered row.
+// Purely an optimization — the synchronous VFS still backs every read.
+export const MULTIRANGE_PREFETCH = true;
+
+// Upper bound on time spent in the prefetch before falling back to synchronous
+// reads, so a slow or stuck multi-range request can never add more than this.
+export const PREFETCH_BUDGET_MS = 4000;
