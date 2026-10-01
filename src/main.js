@@ -35,6 +35,7 @@ const els = {
   errorMessage: $('error-message'),
   errorRetry: $('error-retry'),
   tableWrap: $('table-wrap'),
+  resultsLoading: $('results-loading'),
   body: $('results-body'),
   navFirst: $('nav-first'),
   navPrev: $('nav-prev'),
@@ -242,6 +243,7 @@ function updateFetchStat() {
 function setLoading(isLoading) {
   state.loading = isLoading;
   els.tableWrap.setAttribute('aria-busy', String(isLoading));
+  els.resultsLoading.hidden = !isLoading;
   els.loadingStatus.textContent = isLoading ? 'Betöltés…' : '';
   if (isLoading) {
     for (const b of [els.navFirst, els.navPrev, els.navNext, els.navLast]) b.disabled = true;

@@ -252,6 +252,26 @@ button:disabled {
 }
 
 /* Table --------------------------------------------------------------------- */
+#results {
+  position: relative;
+}
+/* Dimmed overlay with a centered spinner shown while a query is loading. Scoped
+   to the results area (controls stay usable); the spinner is sticky so it stays
+   in view even when the table is scrolled. */
+.results-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border-radius: var(--radius);
+}
+.results-loading .spinner {
+  position: sticky;
+  top: calc(50vh - 60px);
+  margin: 0 auto;
+  width: 48px;
+  height: 48px;
+}
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
