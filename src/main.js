@@ -240,14 +240,25 @@ function updateFetchStat() {
   els.fetchStat.textContent = `Az adatbázisból letöltve ebben a munkamenetben: ${text}`;
 }
 
+// Delay the visible loading cues so instant (cached) queries don't flash them;
+// if a query finishes first, the timer is cancelled and nothing is shown.
+const SPINNER_DELAY_MS = 150;
+let spinnerTimer = null;
+
 function setLoading(isLoading) {
   state.loading = isLoading;
   els.tableWrap.setAttribute('aria-busy', String(isLoading));
-  els.resultsLoading.hidden = !isLoading;
-  els.loadingStatus.textContent = isLoading ? 'Betöltés…' : '';
+
+  clearTimeout(spinnerTimer);
   if (isLoading) {
     for (const b of [els.navFirst, els.navPrev, els.navNext, els.navLast]) b.disabled = true;
+    spinnerTimer = setTimeout(() => {
+      els.resultsLoading.hidden = false;
+      els.loadingStatus.textContent = 'Betöltés…';
+    }, SPINNER_DELAY_MS);
   } else {
+    els.resultsLoading.hidden = true;
+    els.loadingStatus.textContent = '';
     updatePager();
   }
 }
