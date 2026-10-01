@@ -133,6 +133,7 @@ main {
 }
 
 .search-row {
+  position: relative;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -174,9 +175,10 @@ main {
   white-space: nowrap;
 }
 
-/* Collapsible "Keresési tippek" helper next to the search box */
+/* Collapsible "Keresési tippek" helper next to the search box. The panel is
+   anchored to the full-width .search-row (not the small summary) so it can't run
+   off the right edge on narrow screens. */
 .search-tips {
-  position: relative;
   align-self: center;
 }
 .search-tips > summary {
@@ -201,7 +203,7 @@ main {
   z-index: 40;
   top: calc(100% + 6px);
   left: 0;
-  width: min(420px, 90vw);
+  width: min(420px, calc(100vw - 24px));
   padding: 12px 16px;
   background: var(--surface);
   border: 1px solid var(--border);
