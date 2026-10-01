@@ -1,0 +1,22 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Local database build artifacts — these are hosted on Cloudflare R2 and must
+# never be committed (hundreds of MB). Kept locally for tests.
+archive.sqlite
+archive.sqlite-*
+/[0-9]*/
+*/part-*.bin
+toconvert.rds
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

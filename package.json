@@ -1,0 +1,20 @@
+{
+  "name": "fb-politika-archivum",
+  "version": "1.0.0",
+  "description": "Zero-backend static web archive for ~650,000 Hungarian political Facebook posts. Queries a SQLite database on Cloudflare R2 directly from the browser via HTTP range requests and @sqlite.org/sqlite-wasm, inside a Web Worker.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host --port 4173",
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "3.53.4-build1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.2"
+  }
+}

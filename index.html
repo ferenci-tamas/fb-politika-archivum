@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="hu">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Magyar politikai és közéleti Facebook-posztok kereshető archívuma, 2008–2026."
+    />
+    <title>Magyar politikai Facebook-archívum</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#results">Ugrás a találatokhoz</a>
+
+    <header class="site-header">
+      <h1>Magyar politikai Facebook-archívum</h1>
+      <p class="subtitle">Közéleti és politikai Facebook-posztok kereshető archívuma, 2008–2026.</p>
+    </header>
+
+    <main>
+      <form id="controls" class="controls" role="search" aria-label="Keresés és szűrés" autocomplete="off">
+        <div class="search-row">
+          <div class="search-field">
+            <label class="visually-hidden" for="search">Keresés a posztok szövegében</label>
+            <input
+              type="search"
+              id="search"
+              name="search"
+              placeholder="Keresés a posztokban… (pl. kormány, „orbán viktor”, infláció*)"
+              enterkeyhint="search"
+              spellcheck="false"
+            />
+            <button type="button" id="search-clear" class="search-clear" hidden aria-label="Keresés törlése">
+              ×
+            </button>
+          </div>
+          <label class="accent-toggle">
+            <input type="checkbox" id="accent" />
+            <span>Ékezetérzékeny</span>
+          </label>
+        </div>
+
+        <div class="filter-row">
+          <div class="field">
+            <label for="author">Szerző</label>
+            <select id="author" name="author">
+              <option value="">Minden szerző</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="date-from">Ettől</label>
+            <input type="date" id="date-from" name="date-from" />
+          </div>
+          <div class="field">
+            <label for="date-to">Eddig</label>
+            <input type="date" id="date-to" name="date-to" />
+          </div>
+          <div class="field">
+            <label for="sort">Rendezés</label>
+            <select id="sort" name="sort">
+              <option value="date_desc">Legújabb elöl</option>
+              <option value="date_asc">Legrégebbi elöl</option>
+              <option value="author">Szerző (A→Z)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="page-size">Oldalméret</label>
+            <select id="page-size" name="page-size">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="250">250</option>
+            </select>
+          </div>
+          <button type="button" id="filters-clear" class="secondary">Szűrők törlése</button>
+        </div>
+      </form>
+
+      <div class="status-bar">
+        <span id="result-count" class="result-count" aria-live="polite"></span>
+        <span id="loading-status" class="loading-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden>
+        <span id="error-message"></span>
+        <button type="button" id="error-retry" class="secondary">Újra</button>
+      </div>
+
+      <section id="results" aria-label="Találatok">
+        <div id="table-wrap" class="table-wrap" tabindex="0" role="region" aria-label="Posztok táblázata (vízszintesen görgethető)">
+          <table id="results-table" class="results-table">
+            <thead>
+              <tr>
+                <th scope="col" class="col-author">Szerző</th>
+                <th scope="col" class="col-date">Dátum</th>
+                <th scope="col" class="col-text">Szöveg</th>
+                <th scope="col" class="col-post">Poszt</th>
+                <th scope="col" class="col-links">Linkek</th>
+                <th scope="col" class="col-images">Képek</th>
+              </tr>
+            </thead>
+            <tbody id="results-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <nav class="pager" aria-label="Lapozás">
+        <button type="button" id="nav-first" class="nav-btn" disabled>
+          <span class="nav-icon" aria-hidden="true">⏮</span><span class="nav-text">Legújabb</span>
+        </button>
+        <button type="button" id="nav-prev" class="nav-btn" disabled>
+          <span class="nav-icon" aria-hidden="true">◀</span><span class="nav-text">Újabb</span>
+        </button>
+        <span id="page-info" class="page-info" aria-live="polite"></span>
+        <button type="button" id="nav-next" class="nav-btn" disabled>
+          <span class="nav-text">Régebbi</span><span class="nav-icon" aria-hidden="true">▶</span>
+        </button>
+        <button type="button" id="nav-last" class="nav-btn" disabled>
+          <span class="nav-text">Legrégebbi</span><span class="nav-icon" aria-hidden="true">⏭</span>
+        </button>
+      </nav>
+
+      <footer class="site-footer">
+        <p id="fetch-stat" class="fetch-stat"></p>
+        <p class="source-note">
+          Az adatbázist a böngésző közvetlenül, HTTP-tartománykérésekkel olvassa a Cloudflare R2 tárhelyről;
+          a teljes adatbázis soha nem töltődik le.
+        </p>
+      </footer>
+    </main>
+
+    <div id="app-loading" class="app-loading" role="status" aria-live="polite">
+      <div class="app-loading-box">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="app-loading-text">Adatbázis előkészítése… (csak a szükséges részek töltődnek le)</p>
+        <p id="app-loading-error" class="app-loading-error" hidden></p>
+        <button type="button" id="app-reload" class="secondary" hidden>Újratöltés</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

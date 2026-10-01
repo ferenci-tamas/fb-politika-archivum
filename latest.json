@@ -1,0 +1,25 @@
+{
+  "base": "1790843311/",
+  "format": 1,
+  "schemaVersion": 2,
+  "builtAt": 1790843311,
+  "file": "archive.sqlite",
+  "size": 758960128,
+  "md5": "abaae760497c144a22414654efe071fa",
+  "pageSize": 4096,
+  "partSize": 402653184,
+  "parts": [
+    {
+      "name": "part-000.bin",
+      "offset": 0,
+      "size": 402653184,
+      "md5": "d20445f0661f21a42145d5fb85fbd169"
+    },
+    {
+      "name": "part-001.bin",
+      "offset": 402653184,
+      "size": 356306944,
+      "md5": "f09f632304d0bc691de0f72fb02485ea"
+    }
+  ]
+}
