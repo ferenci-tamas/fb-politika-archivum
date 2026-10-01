@@ -309,3 +309,36 @@ export function fetchPage(db, view, nav) {
     hasNext: page.hasNext
   };
 }
+
+// --- monthly histogram (Elemzés tab) ----------------------------------------
+// ids are assigned in (time, postId) order, so the smallest id per month
+// partitions the archive by month exactly. These two helpers feed bucketByMonth
+// (src/lib/monthly.js), which counts matches per month without reading any posts
+// row — essential for broad searches that match hundreds of thousands of posts.
+
+/**
+ * The smallest id in each year-month, ascending by id. One covering-index scan of
+ * idx_posts_time (EXPLAIN QUERY PLAN: SCAN posts USING COVERING INDEX
+ * idx_posts_time) — reads only the compact time index, never the posts rows. The
+ * caller caches the result for the session.
+ */
+export function monthBoundaries(db) {
+  return db
+    .selectObjects(
+      "SELECT strftime('%Y-%m', time, 'unixepoch') AS ym, MIN(id) AS lo FROM posts GROUP BY ym ORDER BY lo"
+    )
+    .map((r) => ({ ym: r.ym, lo: Number(r.lo) }));
+}
+
+/**
+ * Every rowid matching the FTS expression, ascending. Reads only the FTS index
+ * (EXPLAIN QUERY PLAN: SCAN <fts> VIRTUAL TABLE) — no posts rows are touched.
+ */
+export function matchRowidsAsc(db, ftsTable, match) {
+  if (ftsTable !== FTS_TABLE.sensitive && ftsTable !== FTS_TABLE.folded) {
+    throw new Error(`Unknown FTS table: ${ftsTable}`);
+  }
+  return db
+    .selectObjects(`SELECT rowid AS id FROM ${ftsTable} WHERE ${ftsTable} MATCH ? ORDER BY rowid`, [match])
+    .map((r) => Number(r.id));
+}

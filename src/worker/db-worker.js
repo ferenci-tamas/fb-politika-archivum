@@ -24,6 +24,7 @@ import { installRangeVfs } from '../lib/http-vfs.js';
 import { buildFtsMatch } from '../lib/fts-query.js';
 import { parseImages, parseLinks } from '../lib/sanitize.js';
 import * as Q from '../lib/queries.js';
+import { bucketByMonth } from '../lib/monthly.js';
 import { prefetchHydrationPages } from '../lib/btree.js';
 import { makeMultiRangeFetcher } from './multirange.js';
 import { BLOCK_SIZE, MULTIRANGE_PREFETCH, PREFETCH_BUDGET_MS } from '../lib/constants.js';
@@ -41,6 +42,8 @@ let pageSize = 0;
 let fileSize = 0;
 let fetchBlocks = null;
 let mrBytesTotal = 0;
+// Per-session cache of each month's smallest id, for the Elemzés histogram.
+let monthBounds = null;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -139,10 +142,15 @@ async function init() {
   }
 }
 
-self.onmessage = async (event) => {
+self.onmessage = (event) => {
   const msg = event.data;
-  if (!msg || msg.type !== 'query') return;
+  if (!msg) return;
+  if (msg.type === 'query') return void handleQuery(msg);
+  if (msg.type === 'monthly') return void handleMonthly(msg);
+  if (msg.type === 'prepare-monthly') return void handlePrepareMonthly();
+};
 
+async function handleQuery(msg) {
   if (!ready) {
     self.postMessage({ type: 'error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
     return;
@@ -204,6 +212,59 @@ self.onmessage = async (event) => {
       message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
     });
   }
-};
+}
+
+// Warm the month-boundary cache (one covering-index scan) when the Elemzés tab is
+// opened, so the first search doesn't pay for it.
+function handlePrepareMonthly() {
+  if (!ready || monthBounds) return;
+  try {
+    monthBounds = Q.monthBoundaries(db);
+  } catch {
+    // Non-fatal: the next monthly request retries and surfaces any real error.
+  }
+}
+
+// Monthly post-count histogram for a search: bucket the matching FTS rowids into
+// months via the cached boundaries (see src/lib/monthly.js). Only the FTS index
+// (and, once per session, the time index) is read — never the posts rows.
+function handleMonthly(msg) {
+  if (!ready) {
+    self.postMessage({ type: 'monthly-error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
+    return;
+  }
+  try {
+    vfs.clearLastError();
+    const beforeBytes = vfs.getStats().bytesFetched;
+    if (!monthBounds) monthBounds = Q.monthBoundaries(db);
+    const match = msg.search ? buildFtsMatch(msg.search) : '';
+    let points;
+    let total = 0;
+    if (match === '') {
+      points = monthBounds.map((m) => ({ ym: m.ym, n: 0 }));
+    } else {
+      const ftsTable = msg.accentSensitive ? FTS_TABLE.sensitive : FTS_TABLE.folded;
+      const ids = Q.matchRowidsAsc(db, ftsTable, match);
+      points = bucketByMonth(ids, monthBounds);
+      total = ids.length;
+    }
+    self.postMessage({
+      type: 'monthly-result',
+      reqId: msg.reqId,
+      points,
+      total,
+      matchEmpty: match === '',
+      fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
+    });
+  } catch (err) {
+    const vfsErr = vfs && vfs.getLastError();
+    self.postMessage({
+      type: 'monthly-error',
+      reqId: msg.reqId,
+      kind: (vfsErr && vfsErr.kind) || (err && err.kind),
+      message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
+    });
+  }
+}
 
 init();

@@ -27,6 +27,7 @@
     <div class="tabs" id="tabs" role="tablist" aria-label="Nézetek" tabindex="-1">
       <button class="tab" id="tab-nyitolap" type="button" role="tab" aria-selected="true" aria-controls="panel-nyitolap">Nyitólap</button>
       <button class="tab" id="tab-adatbazis" type="button" role="tab" aria-selected="false" aria-controls="panel-adatbazis" tabindex="-1">Adatbázis</button>
+      <button class="tab" id="tab-elemzes" type="button" role="tab" aria-selected="false" aria-controls="panel-elemzes" tabindex="-1">Elemzés</button>
     </div>
 
     <main>
@@ -180,6 +181,40 @@
             <button type="button" id="app-reload" class="secondary" hidden>Újratöltés</button>
           </div>
         </div>
+      </section>
+
+      <section id="panel-elemzes" class="panel" role="tabpanel" aria-labelledby="tab-elemzes" tabindex="0" hidden>
+        <form id="analysis-controls" class="controls" role="search" aria-label="Elemzés – keresés" autocomplete="off">
+          <div class="search-row">
+            <div class="search-field">
+              <label class="visually-hidden" for="analysis-search">Keresés a posztok szövegében</label>
+              <input
+                type="search"
+                id="analysis-search"
+                name="analysis-search"
+                placeholder="Keresés a posztokban… a havi találatszám grafikonjához"
+                enterkeyhint="search"
+                spellcheck="false"
+              />
+              <button type="button" id="analysis-search-clear" class="search-clear" hidden aria-label="Keresés törlése">
+                ×
+              </button>
+            </div>
+            <label class="accent-toggle">
+              <input type="checkbox" id="analysis-accent" />
+              <span>Ékezetérzékeny</span>
+            </label>
+          </div>
+          <p class="analysis-hint">
+            Add meg a keresőkifejezést (ugyanaz a szintaxis, mint az Adatbázisban); a grafikon a találatok havi számát mutatja.
+          </p>
+        </form>
+
+        <div class="status-bar">
+          <span id="analysis-status" class="result-count" aria-live="polite"></span>
+        </div>
+
+        <div id="analysis-chart" class="analysis-chart" aria-live="polite"></div>
       </section>
     </main>
 

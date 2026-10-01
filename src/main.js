@@ -13,6 +13,7 @@ import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToD
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
+import { renderLineChart } from './ui/line-chart.js';
 import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
 import { marked } from 'marked';
 import landingMarkdown from '../landing.md?raw';
@@ -31,9 +32,16 @@ const els = {
   tabs: $('tabs'),
   tabNyitolap: $('tab-nyitolap'),
   tabAdatbazis: $('tab-adatbazis'),
+  tabElemzes: $('tab-elemzes'),
   panelNyitolap: $('panel-nyitolap'),
   panelAdatbazis: $('panel-adatbazis'),
+  panelElemzes: $('panel-elemzes'),
   landing: $('landing'),
+  analysisSearch: $('analysis-search'),
+  analysisSearchClear: $('analysis-search-clear'),
+  analysisAccent: $('analysis-accent'),
+  analysisStatus: $('analysis-status'),
+  analysisChart: $('analysis-chart'),
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
@@ -61,6 +69,13 @@ const els = {
   navLast: $('nav-last'),
   pageInfo: $('page-info'),
   fetchStat: $('fetch-stat')
+};
+
+const TABS = ['nyitolap', 'adatbazis', 'elemzes'];
+const tabEls = {
+  nyitolap: { tab: els.tabNyitolap, panel: els.panelNyitolap },
+  adatbazis: { tab: els.tabAdatbazis, panel: els.panelAdatbazis },
+  elemzes: { tab: els.tabElemzes, panel: els.panelElemzes }
 };
 
 const state = {
@@ -114,6 +129,12 @@ function initDatabase() {
         break;
       case 'error':
         if (msg.reqId === state.reqId) onQueryError(msg);
+        break;
+      case 'monthly-result':
+        if (msg.reqId === analysisReqId) onMonthlyResult(msg);
+        break;
+      case 'monthly-error':
+        if (msg.reqId === analysisReqId) onMonthlyError(msg);
         break;
       default:
         break;
@@ -190,6 +211,7 @@ function onReady(msg) {
   setControlsDisabled(false);
   applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
   runFirstQueryIfNeeded(); // only queries if the Adatbázis tab is already showing
+  if (activeTab === 'elemzes') prepareAnalysis(); // warm + run if the user is already here
 }
 
 function onResult(msg) {
@@ -392,6 +414,8 @@ function updateHash() {
       { defaultSort: SORTS.DATE_DESC, defaultPageSize: DEFAULT_PAGE_SIZE }
     );
     body = query ? `tab=adatbazis&${query}` : 'tab=adatbazis';
+  } else if (activeTab === 'elemzes') {
+    body = 'tab=elemzes';
   }
   history.replaceState(null, '', body ? `#${body}` : location.pathname + location.search);
 }
@@ -492,6 +516,95 @@ els.errorRetry.addEventListener('click', () => {
 
 els.reload.addEventListener('click', () => window.location.reload());
 
+// --- analysis (Elemzés tab) -------------------------------------------------
+// Shares the worker/DB with Adatbázis. A search posts a 'monthly' request; the
+// worker returns per-month counts, drawn as a line chart. analysisReqId drops
+// stale responses, exactly like the feed's reqId.
+let analysisReqId = 0;
+let analysisPrepared = false;
+let analysisTimer = null;
+
+// Shown the Elemzés tab (and re-invoked from onReady if the DB was still loading):
+// warm the month boundaries, then run whatever the user has already typed.
+function prepareAnalysis() {
+  if (!state.ready) return;
+  if (!analysisPrepared) {
+    analysisPrepared = true;
+    worker.postMessage({ type: 'prepare-monthly' });
+  }
+  if (els.analysisSearch.value.trim() !== '') runAnalysis();
+}
+
+function runAnalysis() {
+  const term = els.analysisSearch.value;
+  els.analysisSearchClear.hidden = term.trim() === '';
+  if (term.trim() === '') {
+    analysisReqId += 1; // invalidate any in-flight response
+    els.analysisStatus.textContent = '';
+    els.analysisChart.replaceChildren();
+    return;
+  }
+  if (!state.ready) {
+    els.analysisStatus.textContent = 'Az adatbázis betöltése folyamatban…';
+    return; // prepareAnalysis() re-runs this once the DB is ready
+  }
+  analysisReqId += 1;
+  els.analysisStatus.textContent = 'Számítás…';
+  const loading = document.createElement('div');
+  loading.className = 'chart-loading';
+  loading.textContent = 'Grafikon számítása…';
+  els.analysisChart.replaceChildren(loading);
+  worker.postMessage({
+    type: 'monthly',
+    reqId: analysisReqId,
+    search: term,
+    accentSensitive: els.analysisAccent.checked
+  });
+}
+
+function onMonthlyResult(msg) {
+  if (msg.matchEmpty) {
+    els.analysisStatus.textContent = 'Adj meg egy keresőkifejezést.';
+    els.analysisChart.replaceChildren();
+    return;
+  }
+  if (msg.total === 0) {
+    els.analysisStatus.textContent = 'Nincs a keresésnek megfelelő poszt.';
+    els.analysisChart.replaceChildren();
+    return;
+  }
+  const term = els.analysisSearch.value.trim();
+  els.analysisStatus.textContent = `${formatCount(msg.total)} találat havi eloszlása`;
+  renderLineChart(els.analysisChart, msg.points, {
+    ariaLabel: `„${term}”: havi találatszám, összesen ${formatCount(msg.total)} poszt`
+  });
+}
+
+function onMonthlyError(msg) {
+  els.analysisStatus.textContent = formatErrorMessage(msg);
+  els.analysisChart.replaceChildren();
+}
+
+els.analysisSearch.addEventListener('input', () => {
+  els.analysisSearchClear.hidden = els.analysisSearch.value.trim() === '';
+  clearTimeout(analysisTimer);
+  analysisTimer = setTimeout(runAnalysis, 300);
+});
+els.analysisSearch.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    clearTimeout(analysisTimer);
+    runAnalysis();
+  }
+});
+els.analysisSearchClear.addEventListener('click', () => {
+  els.analysisSearch.value = '';
+  els.analysisSearchClear.hidden = true;
+  runAnalysis();
+  els.analysisSearch.focus();
+});
+els.analysisAccent.addEventListener('change', runAnalysis);
+
 // Expand / collapse long post text (event delegation on the table body).
 els.body.addEventListener('click', (e) => {
   const btn = e.target.closest('.expand-toggle');
@@ -516,25 +629,30 @@ window.addEventListener('resize', () => {
 // --- tabs -------------------------------------------------------------------
 
 function setActiveTab(tab, { updateUrl = true } = {}) {
+  if (!TABS.includes(tab)) tab = 'nyitolap';
   activeTab = tab;
-  const isDb = tab === 'adatbazis';
-  els.tabNyitolap.setAttribute('aria-selected', String(!isDb));
-  els.tabAdatbazis.setAttribute('aria-selected', String(isDb));
-  els.tabNyitolap.tabIndex = isDb ? -1 : 0;
-  els.tabAdatbazis.tabIndex = isDb ? 0 : -1;
-  els.panelNyitolap.hidden = isDb;
-  els.panelAdatbazis.hidden = !isDb;
-  if (isDb) {
+  for (const t of TABS) {
+    const selected = t === tab;
+    tabEls[t].tab.setAttribute('aria-selected', String(selected));
+    tabEls[t].tab.tabIndex = selected ? 0 : -1;
+    tabEls[t].panel.hidden = !selected;
+  }
+  if (tab === 'adatbazis') {
     initDatabase(); // start the worker on first open (idempotent)
     runFirstQueryIfNeeded(); // if the DB was preloaded, run the deferred first query now
+  } else if (tab === 'elemzes') {
+    initDatabase(); // the monthly histogram also runs in the worker
+    prepareAnalysis(); // warm the month boundaries, then run any typed search
   }
   if (updateUrl) updateHash();
 }
 
-// The Adatbázis tab is implied by any query in the hash; otherwise read tab=.
+// tab= in the hash wins; otherwise any encoded query implies the Adatbázis tab.
 function tabFromHash() {
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
-  if (params.get('tab') === 'adatbazis') return 'adatbazis';
+  const tab = params.get('tab');
+  if (tab === 'elemzes') return 'elemzes';
+  if (tab === 'adatbazis') return 'adatbazis';
   const query = encodeViewToHash(
     decodeHashToView(location.hash, {
       validSorts: SORT_VALUES,
@@ -547,15 +665,20 @@ function tabFromHash() {
   return query ? 'adatbazis' : 'nyitolap';
 }
 
-els.tabNyitolap.addEventListener('click', () => setActiveTab('nyitolap'));
-els.tabAdatbazis.addEventListener('click', () => setActiveTab('adatbazis'));
+for (const t of TABS) {
+  tabEls[t].tab.addEventListener('click', () => setActiveTab(t));
+}
 els.tabs.addEventListener('keydown', (e) => {
-  if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
-    e.preventDefault();
-    const tab = e.key === 'ArrowRight' || e.key === 'End' ? 'adatbazis' : 'nyitolap';
-    setActiveTab(tab);
-    (tab === 'adatbazis' ? els.tabAdatbazis : els.tabNyitolap).focus();
-  }
+  if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const i = TABS.indexOf(activeTab);
+  let next;
+  if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = TABS.length - 1;
+  else if (e.key === 'ArrowRight') next = (i + 1) % TABS.length;
+  else next = (i - 1 + TABS.length) % TABS.length;
+  setActiveTab(TABS[next]);
+  tabEls[TABS[next]].tab.focus();
 });
 
 // Deep-link: reflect tab + filters from the URL (shared link, manual edit, Back/Forward).

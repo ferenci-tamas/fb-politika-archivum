@@ -683,6 +683,52 @@ button:disabled {
   color: var(--bad);
 }
 
+/* Analysis (Elemzés) tab — monthly line chart ------------------------------- */
+.analysis-hint {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.analysis-chart {
+  margin-top: 8px;
+  min-height: 140px;
+}
+.chart-loading {
+  padding: 48px 12px;
+  text-align: center;
+  color: var(--muted);
+}
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.chart-grid-v {
+  opacity: 0.45;
+}
+.chart-ylabel,
+.chart-xlabel {
+  fill: var(--muted);
+  font-size: 12px;
+  font-family: inherit;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Hover/focus image thumbnail preview (see ui/image-preview.js) -------------- */
 .img-preview {
   position: fixed;
