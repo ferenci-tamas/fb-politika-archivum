@@ -166,6 +166,7 @@ main {
   max-width: 72ch;
   margin: 0 auto;
   padding: 12px 0 32px;
+  font-size: 1.0625rem;
   line-height: 1.7;
 }
 .landing > :first-child {
@@ -191,6 +192,8 @@ main {
 }
 .landing a {
   color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 .landing ul,
 .landing ol {
