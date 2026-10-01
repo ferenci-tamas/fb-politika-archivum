@@ -570,7 +570,9 @@ window.addEventListener('hashchange', () => {
 });
 
 // Render the landing page from landing.md (trusted, author-authored Markdown).
-els.landing.innerHTML = marked.parse(landingMarkdown);
+// marked has no smartypants option, so convert the author's `--` to an em dash
+// ourselves. The lookarounds match exactly two hyphens, leaving `---` untouched.
+els.landing.innerHTML = marked.parse(landingMarkdown.replace(/(?<!-)--(?!-)/g, '—'));
 
 setControlsDisabled(true);
 setActiveTab(tabFromHash(), { updateUrl: false });
