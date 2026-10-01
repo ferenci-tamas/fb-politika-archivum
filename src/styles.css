@@ -558,49 +558,11 @@ button:disabled {
   height: 48px;
 }
 .table-wrap {
-  /* Scroll container for the table. In body.view-db its height is bounded by the
-     flex chain below so the body scrolls inside while the sticky thead stays
-     pinned and the page itself does not scroll. */
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
-}
-
-/* Fixed-viewport layout for the Adatbázis tab: the view fills the window and only
-   the table scrolls, so the filter panel and column headers stay pinned above it
-   and nothing can scroll behind them. Flexbox distributes the height, so the
-   variable filter-bar height needs no magic number. Scoped to body.view-db
-   (toggled per tab in main.js) so the landing tab keeps normal page scrolling.
-   Every element in the height chain must be a flex container (display:flex) AND a
-   shrinkable flex item (min-height:0); the previous attempt broke scrolling by
-   omitting display:flex on <main>. No overflow:hidden anywhere, so if the chain
-   ever fails to bound, the page scrolls instead of locking up. */
-body.view-db {
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
-}
-body.view-db > header,
-body.view-db > .tabs {
-  flex: none;
-}
-body.view-db main,
-body.view-db .panel-db,
-body.view-db #results {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-body.view-db main {
-  padding-bottom: 12px;
-}
-body.view-db .table-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
 }
 .results-table {
   width: 100%;
@@ -617,9 +579,7 @@ body.view-db .table-wrap {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--muted);
-  /* A sticky header over a border-collapse table loses its border-bottom while
-     pinned; an inset box-shadow draws the divider reliably instead. */
-  box-shadow: inset 0 -2px 0 var(--border);
+  border-bottom: 2px solid var(--border);
   z-index: 1;
 }
 .results-table td {
