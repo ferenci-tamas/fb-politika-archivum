@@ -10,7 +10,7 @@ import {
   SORTS
 } from './config.js';
 import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToDateInput } from './lib/format.js';
-import { renderRows, renderMessageRow } from './ui/render.js';
+import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 
 const worker = new Worker(new URL('./worker/db-worker.js', import.meta.url), { type: 'module' });
 
@@ -397,6 +397,14 @@ els.body.addEventListener('click', (e) => {
   btn.setAttribute('aria-expanded', String(nowExpanded));
   target.classList.toggle('clamped', !nowExpanded);
   btn.textContent = nowExpanded ? 'Kevesebb' : 'Megnyitás';
+});
+
+// Re-evaluate expand controls when a width change (window resize / orientation)
+// could alter which posts are clipped.
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => refreshExpandControls(els.body), 150);
 });
 
 setControlsDisabled(true);

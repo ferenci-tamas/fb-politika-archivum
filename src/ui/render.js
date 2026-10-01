@@ -15,12 +15,41 @@ export function renderRows(tbody, rows, { imagesBaseUrl }) {
   tbody.append(frag);
   // Decide the expand control from real layout: only text that is actually
   // clipped at the 4-line clamp gets a "Megnyitás" button, so expanding never
-  // leaves the text unchanged. All heights are read first, then mutated, to
-  // avoid layout thrashing.
-  addExpandControls(tbody);
+  // leaves the text unchanged.
+  applyExpandControls(tbody);
 }
 
-function addExpandControls(tbody) {
+/**
+ * Re-evaluate the expand controls for the rows currently in the table. A changed
+ * column width (window resize / orientation change) can make a clamped text now
+ * fit (spurious button) or a fitting text now overflow (missing button). Each
+ * post is reset to the clamped baseline, re-measured, and posts the user had
+ * expanded are re-expanded afterwards when they are still clipped.
+ */
+export function refreshExpandControls(tbody) {
+  const previouslyExpanded = new Set();
+  for (const btn of tbody.querySelectorAll('.expand-toggle')) {
+    if (btn.getAttribute('aria-expanded') === 'true') previouslyExpanded.add(btn.getAttribute('aria-controls'));
+    btn.remove();
+  }
+  for (const div of tbody.querySelectorAll('.post-text')) div.classList.add('clamped');
+
+  applyExpandControls(tbody);
+
+  if (previouslyExpanded.size === 0) return;
+  for (const btn of tbody.querySelectorAll('.expand-toggle')) {
+    const id = btn.getAttribute('aria-controls');
+    if (!previouslyExpanded.has(id)) continue;
+    const div = document.getElementById(id);
+    if (div) div.classList.remove('clamped');
+    btn.setAttribute('aria-expanded', 'true');
+    btn.textContent = 'Kevesebb';
+  }
+}
+
+// Reads all heights first, then mutates, to avoid layout thrashing. Each clamped
+// text that overflows keeps its clamp and gets a button; the rest are unclamped.
+function applyExpandControls(tbody) {
   const divs = Array.from(tbody.querySelectorAll('.post-text.clamped'));
   const overflowing = divs.map((div) => div.scrollHeight > div.clientHeight + 1);
   divs.forEach((div, i) => {
