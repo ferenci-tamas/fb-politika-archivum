@@ -12,6 +12,7 @@ import {
 import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToDateInput } from './lib/format.js';
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
+import { initImagePreview } from './ui/image-preview.js';
 import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
 import { marked } from 'marked';
 import landingMarkdown from '../landing.md?raw';
@@ -573,6 +574,9 @@ window.addEventListener('hashchange', () => {
 // marked has no smartypants option, so convert the author's `--` to an em dash
 // ourselves. The lookarounds match exactly two hyphens, leaving `---` untouched.
 els.landing.innerHTML = marked.parse(landingMarkdown.replace(/(?<!-)--(?!-)/g, '—'));
+
+// Hover/focus thumbnail preview over the numbered image links in the results.
+initImagePreview(els.body);
 
 setControlsDisabled(true);
 setActiveTab(tabFromHash(), { updateUrl: false });

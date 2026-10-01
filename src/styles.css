@@ -682,6 +682,35 @@ button:disabled {
 .dot-bad {
   color: var(--bad);
 }
+
+/* Hover/focus image thumbnail preview (see ui/image-preview.js) -------------- */
+.img-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+.img-preview.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+.img-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 300px;
+  max-height: 300px;
+  border-radius: calc(var(--radius) - 2px);
+}
 .link-invalid {
   color: var(--muted);
   text-decoration: line-through;
