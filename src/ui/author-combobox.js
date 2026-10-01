@@ -156,8 +156,11 @@ export function createAuthorCombobox({ container, input, listbox, clearButton, a
     }
   });
 
-  // Options are non-focusable <li>, so clicking them keeps focus on the input;
-  // the click handler selects without any blur race.
+  // Keep focus on the input while pressing inside the listbox, otherwise the
+  // mousedown blurs the input and the container's focusout handler closes (and
+  // hides) the list before the click can select. preventDefault keeps focus so
+  // the click below still fires and selects.
+  listbox.addEventListener('mousedown', (e) => e.preventDefault());
   listbox.addEventListener('click', (e) => {
     const li = e.target.closest('.combo-option');
     if (!li) return;
