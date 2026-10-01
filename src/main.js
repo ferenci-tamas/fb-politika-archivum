@@ -524,6 +524,9 @@ function setActiveTab(tab, { updateUrl = true } = {}) {
   els.tabAdatbazis.tabIndex = isDb ? 0 : -1;
   els.panelNyitolap.hidden = isDb;
   els.panelAdatbazis.hidden = !isDb;
+  // Fixed-viewport layout (only the table scrolls) applies to the data tab only;
+  // the landing tab keeps normal page scrolling.
+  document.body.classList.toggle('view-db', isDb);
   if (isDb) {
     initDatabase(); // start the worker on first open (idempotent)
     runFirstQueryIfNeeded(); // if the DB was preloaded, run the deferred first query now
