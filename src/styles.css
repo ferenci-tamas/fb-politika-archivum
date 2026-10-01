@@ -198,8 +198,67 @@ main {
   color: var(--text);
   min-height: 38px;
 }
-#author {
+/* Searchable author picker (combobox) */
+.combobox {
+  position: relative;
   min-width: 220px;
+}
+.combobox input {
+  width: 100%;
+  padding-right: 32px;
+}
+.combo-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: var(--surface-alt);
+  color: var(--text);
+  border-radius: 50%;
+  font-size: 1rem;
+  line-height: 1;
+  min-height: 0;
+}
+.combo-list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.combo-option,
+.combo-empty {
+  padding: 7px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-option {
+  cursor: pointer;
+}
+.combo-option:hover,
+.combo-option.active {
+  background: var(--surface-alt);
+}
+.combo-option[aria-selected='true'] {
+  font-weight: 600;
+  color: var(--accent);
+}
+.combo-empty {
+  color: var(--muted);
 }
 
 button {
@@ -500,9 +559,8 @@ button:disabled {
     flex: 1 1 140px;
     min-width: 0;
   }
-  /* Relax the wide-screen min-width so the field can shrink; do NOT put flex on
-     the select itself — in the column .field that sets flex-basis on the height. */
-  #author {
+  /* Relax the wide-screen min-width so the author field can shrink. */
+  .combobox {
     min-width: 0;
   }
   .filter-row {

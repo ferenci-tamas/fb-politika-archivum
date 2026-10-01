@@ -11,6 +11,7 @@ import {
 } from './config.js';
 import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToDateInput } from './lib/format.js';
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
+import { createAuthorCombobox } from './ui/author-combobox.js';
 
 const worker = new Worker(new URL('./worker/db-worker.js', import.meta.url), { type: 'module' });
 
@@ -23,7 +24,10 @@ const els = {
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
-  author: $('author'),
+  authorCombobox: $('author-combobox'),
+  authorInput: $('author-input'),
+  authorListbox: $('author-listbox'),
+  authorClear: $('author-clear'),
   dateFrom: $('date-from'),
   dateTo: $('date-to'),
   sort: $('sort'),
@@ -69,6 +73,8 @@ const state = {
   sessionBytes: 0,
   ready: false
 };
+
+let authorPicker = null;
 
 // --- worker messaging -------------------------------------------------------
 
@@ -129,7 +135,18 @@ function send(direction) {
 
 function onReady(msg) {
   state.ready = true;
-  populateAuthors(msg.authors);
+  authorPicker = createAuthorCombobox({
+    container: els.authorCombobox,
+    input: els.authorInput,
+    listbox: els.authorListbox,
+    clearButton: els.authorClear,
+    authors: msg.authors,
+    formatCount,
+    onChange: (authorId) => {
+      state.authorId = authorId;
+      send('first');
+    }
+  });
   setupDateBounds(msg.meta);
   els.appLoading.hidden = true;
   setControlsDisabled(false);
@@ -292,23 +309,6 @@ function formatErrorMessage(msg) {
 
 // --- control population -----------------------------------------------------
 
-function populateAuthors(authors) {
-  // Clear the placeholder option from index.html so "Minden szerző" is not doubled.
-  els.author.replaceChildren();
-  const frag = document.createDocumentFragment();
-  const all = document.createElement('option');
-  all.value = '';
-  all.textContent = 'Minden szerző';
-  frag.append(all);
-  for (const a of authors) {
-    const opt = document.createElement('option');
-    opt.value = String(a.authorId);
-    opt.textContent = `${a.authorname} (${formatCount(a.post_count)})`;
-    frag.append(opt);
-  }
-  els.author.append(frag);
-}
-
 function setupDateBounds(meta) {
   const min = unixToDateInput(meta.min_time);
   const max = unixToDateInput(meta.max_time);
@@ -319,7 +319,7 @@ function setupDateBounds(meta) {
 }
 
 function setControlsDisabled(disabled) {
-  for (const key of ['search', 'accent', 'author', 'dateFrom', 'dateTo', 'sort', 'pageSize', 'filtersClear', 'searchClear']) {
+  for (const key of ['search', 'accent', 'authorInput', 'dateFrom', 'dateTo', 'sort', 'pageSize', 'filtersClear', 'searchClear']) {
     els[key].disabled = disabled;
   }
 }
@@ -327,7 +327,6 @@ function setControlsDisabled(disabled) {
 // --- reading controls into state --------------------------------------------
 
 function readFiltersAndReload() {
-  state.authorId = els.author.value ? Number(els.author.value) : null;
   state.dateFrom = els.dateFrom.value ? dateInputToUnixStart(els.dateFrom.value) : null;
   state.dateTo = els.dateTo.value ? dateInputToUnixEndExclusive(els.dateTo.value) : null;
   state.accentSensitive = els.accent.checked;
@@ -366,7 +365,6 @@ els.searchClear.addEventListener('click', () => {
 });
 
 els.accent.addEventListener('change', readFiltersAndReload);
-els.author.addEventListener('change', readFiltersAndReload);
 els.dateFrom.addEventListener('change', readFiltersAndReload);
 els.dateTo.addEventListener('change', readFiltersAndReload);
 els.sort.addEventListener('change', readFiltersAndReload);
@@ -376,7 +374,8 @@ els.filtersClear.addEventListener('click', () => {
   els.search.value = '';
   els.searchClear.hidden = true;
   els.accent.checked = false;
-  els.author.value = '';
+  if (authorPicker) authorPicker.reset();
+  state.authorId = null;
   els.dateFrom.value = '';
   els.dateTo.value = '';
   els.sort.value = SORTS.DATE_DESC;

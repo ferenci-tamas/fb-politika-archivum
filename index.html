@@ -43,10 +43,23 @@
 
         <div class="filter-row">
           <div class="field">
-            <label for="author">Szerző</label>
-            <select id="author" name="author">
-              <option value="">Minden szerző</option>
-            </select>
+            <label for="author-input">Szerző</label>
+            <div class="combobox" id="author-combobox">
+              <input
+                type="text"
+                id="author-input"
+                role="combobox"
+                aria-expanded="false"
+                aria-controls="author-listbox"
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Minden szerző"
+              />
+              <button type="button" id="author-clear" class="combo-clear" hidden aria-label="Szerző szűrő törlése">×</button>
+              <ul id="author-listbox" class="combo-list" role="listbox" aria-label="Szerzők" hidden></ul>
+            </div>
           </div>
           <div class="field">
             <label for="date-from">Ettől</label>
