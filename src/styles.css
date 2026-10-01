@@ -558,7 +558,13 @@ button:disabled {
   height: 48px;
 }
 .table-wrap {
-  overflow-x: auto;
+  /* overflow (both axes) makes this the vertical scroll container as well, so the
+     sticky thead pins to the top of the table while the body scrolls. max-height
+     keeps that scroll area within the viewport, below the sticky tab bar and
+     controls; tune the offset if the pager ends up too low. */
+  overflow: auto;
+  max-height: calc(100dvh - 230px);
+  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -579,7 +585,9 @@ button:disabled {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--muted);
-  border-bottom: 2px solid var(--border);
+  /* A sticky header over a border-collapse table loses its border-bottom while
+     pinned; an inset box-shadow draws the divider reliably instead. */
+  box-shadow: inset 0 -2px 0 var(--border);
   z-index: 1;
 }
 .results-table td {
