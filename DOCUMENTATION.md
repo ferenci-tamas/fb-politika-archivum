@@ -26,6 +26,8 @@ Open the [live site](https://ferenci-tamas.github.io/fb-politika-archivum/) — 
 
 Search, filters and sorting combine freely, and the footer shows how little of the database your session downloaded.
 
+Your current search and filters are reflected in the page URL (after `#`), so you can bookmark or share a link to any view — it reopens on the first page. Authors are encoded by name, so links stay valid across archive rebuilds.
+
 ---
 
 ## Table of contents

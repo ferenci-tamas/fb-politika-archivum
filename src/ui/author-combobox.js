@@ -233,6 +233,14 @@ export function createAuthorCombobox({ container, input, listbox, chips, clearBu
   });
 
   return {
+    // Set the selection programmatically (e.g. restoring from the URL) without
+    // firing onChange — the caller triggers its own reload.
+    setSelected(ids) {
+      selected.clear();
+      for (const id of ids) if (authorsById.has(id)) selected.add(id);
+      renderChips();
+      updateClearVisibility();
+    },
     reset() {
       selected.clear();
       input.value = '';

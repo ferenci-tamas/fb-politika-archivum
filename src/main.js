@@ -12,6 +12,7 @@ import {
 import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToDateInput } from './lib/format.js';
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
+import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
 
 const worker = new Worker(new URL('./worker/db-worker.js', import.meta.url), { type: 'module' });
 
@@ -76,6 +77,9 @@ const state = {
 };
 
 let authorPicker = null;
+let authorIdToName = new Map();
+let authorNameToId = new Map();
+const SORT_VALUES = Object.values(SORTS);
 
 // --- worker messaging -------------------------------------------------------
 
@@ -122,6 +126,8 @@ function send(direction) {
 
   state.reqId += 1;
   state.pendingDirection = direction;
+  // Reflect the query (not the pagination position) in the URL on filter changes.
+  if (direction === 'first') updateHash();
   setLoading(true);
   worker.postMessage({
     type: 'query',
@@ -136,6 +142,8 @@ function send(direction) {
 
 function onReady(msg) {
   state.ready = true;
+  authorIdToName = new Map(msg.authors.map((a) => [a.authorId, a.authorname]));
+  authorNameToId = new Map(msg.authors.map((a) => [a.authorname, a.authorId]));
   authorPicker = createAuthorCombobox({
     container: els.authorCombobox,
     input: els.authorInput,
@@ -152,6 +160,7 @@ function onReady(msg) {
   setupDateBounds(msg.meta);
   els.appLoading.hidden = true;
   setControlsDisabled(false);
+  applyHashToState(); // restore filters/search from a shared or bookmarked URL
   send('first');
 }
 
@@ -326,6 +335,51 @@ function setControlsDisabled(disabled) {
   }
 }
 
+// --- deep link (URL hash) <-> state -----------------------------------------
+// Only the query is encoded (search, accent, authors by name, date range, sort,
+// page size) — never the pagination position; a shared link reopens on page 1.
+// replaceState avoids flooding history and does not fire hashchange (no loop).
+
+function updateHash() {
+  const hash = encodeViewToHash(
+    {
+      search: state.search,
+      accentSensitive: state.accentSensitive,
+      authorNames: state.authorIds.map((id) => authorIdToName.get(id)).filter(Boolean),
+      dateFrom: els.dateFrom.value,
+      dateTo: els.dateTo.value,
+      sort: state.sort,
+      pageSize: state.pageSize
+    },
+    { defaultSort: SORTS.DATE_DESC, defaultPageSize: DEFAULT_PAGE_SIZE }
+  );
+  history.replaceState(null, '', hash ? `#${hash}` : location.pathname + location.search);
+}
+
+function applyHashToState() {
+  const v = decodeHashToView(location.hash, {
+    validSorts: SORT_VALUES,
+    pageSizes: FEED_PAGE_SIZES,
+    defaultSort: SORTS.DATE_DESC,
+    defaultPageSize: DEFAULT_PAGE_SIZE
+  });
+  els.search.value = v.search;
+  state.search = v.search;
+  els.searchClear.hidden = v.search.trim() === '';
+  els.accent.checked = v.accentSensitive;
+  state.accentSensitive = v.accentSensitive;
+  els.sort.value = v.sort;
+  state.sort = v.sort;
+  els.pageSize.value = String(v.pageSize);
+  state.pageSize = v.pageSize;
+  els.dateFrom.value = v.dateFrom;
+  state.dateFrom = v.dateFrom ? dateInputToUnixStart(v.dateFrom) : null;
+  els.dateTo.value = v.dateTo;
+  state.dateTo = v.dateTo ? dateInputToUnixEndExclusive(v.dateTo) : null;
+  state.authorIds = [...new Set(v.authorNames.map((n) => authorNameToId.get(n)).filter((id) => Number.isFinite(id)))];
+  if (authorPicker) authorPicker.setSelected(state.authorIds);
+}
+
 // --- reading controls into state --------------------------------------------
 
 function readFiltersAndReload() {
@@ -417,6 +471,14 @@ let resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => refreshExpandControls(els.body), 150);
+});
+
+// Apply deep-link changes from the URL (shared link opened in-session, manual
+// edit, or Back/Forward to a different hash).
+window.addEventListener('hashchange', () => {
+  if (!state.ready) return;
+  applyHashToState();
+  send('first');
 });
 
 setControlsDisabled(true);
