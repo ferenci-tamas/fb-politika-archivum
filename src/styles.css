@@ -558,49 +558,17 @@ button:disabled {
   height: 48px;
 }
 .table-wrap {
-  /* Scroll container for the table. Its height is bounded by the flex layout in
-     body.view-db (see "Fixed-viewport layout" below), so the body scrolls inside
-     while the sticky thead stays pinned — and the page itself does not scroll, so
-     the header can never pass behind the sticky filter panel. */
+  /* overflow (both axes) makes this the vertical scroll container as well, so the
+     sticky thead pins to the top of the table while the body scrolls. max-height
+     keeps that scroll area within the viewport, below the sticky tab bar and
+     controls; tune the offset if the pager ends up too low. */
   overflow: auto;
+  max-height: calc(100dvh - 230px);
   overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
-}
-
-/* Fixed-viewport layout for the Adatbázis tab: the view fills the window and only
-   the table scrolls, so the filter panel and column headers stay pinned above it
-   and nothing can scroll behind them. Flexbox distributes the height, so the
-   variable filter-bar height needs no magic number. Scoped to body.view-db
-   (toggled per tab in main.js) so the landing tab keeps normal page scrolling. */
-body.view-db {
-  height: 100dvh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-body.view-db > header,
-body.view-db > .tabs {
-  flex: none;
-}
-body.view-db main {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-  padding-bottom: 12px;
-}
-body.view-db .panel-db,
-body.view-db #results {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-body.view-db .table-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
 }
 .results-table {
   width: 100%;
