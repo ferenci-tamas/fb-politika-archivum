@@ -131,9 +131,9 @@ npm run build && npm run preview   # http://localhost:4173
 ```
 
 The local page still reads the live database from R2, so the R2 CORS policy must
-allow your localhost origin. The provided [`r2-cors.json`](r2-cors.json) already
-lists `http://localhost:5173` and `http://localhost:4173` — apply it (see §6).
-(You can remove the localhost origins for a production-only policy.)
+allow your localhost origin. The committed [`r2-cors.json`](r2-cors.json) is
+production-only (just the GitHub Pages origin), so for local development add your
+dev origin (e.g. `http://localhost:5173`) to `AllowedOrigins` and apply it (see §6).
 
 Run the tests:
 
@@ -179,7 +179,7 @@ To host the data elsewhere, set `VITE_R2_BASE_URL` to the new origin and rebuild
 CORS is required so the browser may issue cross-origin **range** requests and read
 the `Content-Range` response header. The policy is in [`r2-cors.json`](r2-cors.json):
 
-- `AllowedOrigins`: the GitHub Pages site (+ optional localhost for dev)
+- `AllowedOrigins`: the GitHub Pages site only (add a localhost origin for local dev)
 - `AllowedMethods`: `GET`, `HEAD`
 - `AllowedHeaders`: `Range`
 - `ExposeHeaders`: `Content-Range`, `Content-Length`, `Accept-Ranges`, `ETag`
