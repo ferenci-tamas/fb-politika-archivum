@@ -40,7 +40,12 @@ export const SQLITE_CACHE_KIB = 16 * 1024;
 // batch-fetch the b-tree leaf/overflow pages for the page's rows in ~tree-depth
 // multipart/byteranges requests instead of one serialized read per scattered row.
 // Purely an optimization — the synchronous VFS still backs every read.
-export const MULTIRANGE_PREFETCH = true;
+// Disabled: in-browser it regressed latency. A multi-range Range header is not
+// CORS-safelisted (unlike a single bytes=X-Y range), so each request adds a CORS
+// preflight, and Cloudflare's multi-range assembly for cold/scattered ranges is
+// slow in practice — so the prefetch kept hitting the budget below and only added
+// delay. The implementation is kept (and tested) for future investigation.
+export const MULTIRANGE_PREFETCH = false;
 
 // Upper bound on time spent in the prefetch before falling back to synchronous
 // reads, so a slow or stuck multi-range request can never add more than this.
