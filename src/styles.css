@@ -42,6 +42,14 @@
   box-sizing: border-box;
 }
 
+/* The hidden attribute must always win, even over class rules that set a
+   display value (e.g. .app-loading { display: grid } and
+   .error-banner { display: flex }). Without this, toggling element.hidden has
+   no visual effect and the loading overlay never disappears. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
