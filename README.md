@@ -1,5 +1,7 @@
 # fb-politika-archivum
 
+[![Deploy to GitHub Pages](https://github.com/ferenci-tamas/fb-politika-archivum/actions/workflows/deploy.yml/badge.svg)](https://github.com/ferenci-tamas/fb-politika-archivum/actions/workflows/deploy.yml)
+
 Magyar politikai és közéleti Facebook-posztok archívuma, 2008–2026.
 
 A zero-backend, fully static web application for searching, filtering and browsing
@@ -13,9 +15,22 @@ is no application server.
 - **Data + images:** https://fb-politika-archivum.medstat.hu (Cloudflare R2)
 - **Posts:** 654,375 · **Authors:** 106 · **DB size:** ~686 MB (SQLite, page size 16384)
 
+## Usage
+
+Open the [live site](https://ferenci-tamas.github.io/fb-politika-archivum/) — no login, nothing to install; everything runs in your browser.
+
+- **Search** — type in the search box; results update as you type. Multiple words are AND-combined (`orbán kormány` → posts with both). Use quotes for a phrase (`"orbán viktor"`), a trailing `*` for a prefix (`inflác*`), `OR` between words (`alma OR körte`), and a leading `-` to exclude (`kormány -brüsszel`). Search is accent-insensitive by default — tick **Ékezetérzékeny** to match diacritics exactly; the **×** clears it.
+- **Filter** — select one or more **authors** (type to filter the list; chosen authors appear as chips and are combined with OR) and/or a **date range**. **Szűrők törlése** resets everything.
+- **Sort** — newest first, oldest first, or by author (A→Z).
+- **Browse** — choose 50 / 100 / 250 rows per page and move with **Legújabb / Újabb / Régebbi / Legrégebbi** (first / newer / older / last). Long posts expand with **Megnyitás / Kevesebb**. In each row, **Poszt** opens the original Facebook post, and the numbered **Linkek** (green ✓ = reachable, red ✕ = not) and **Képek** open in a new tab.
+
+Search, filters and sorting combine freely, and the footer shows how little of the database your session downloaded.
+
 ---
 
 ## Table of contents
+
+- [Usage](#usage)
 
 1. [Architecture](#1-architecture)
 2. [SQLite schema](#2-sqlite-schema)
