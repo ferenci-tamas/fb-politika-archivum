@@ -1,0 +1,15 @@
+{
+  "name": "Magyar politikai Facebook-archívum",
+  "short_name": "FB-archívum",
+  "description": "Magyar politikai és közéleti Facebook-posztok kereshető archívuma, 2008–2026.",
+  "lang": "hu",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "theme_color": "#1b5fb0",
+  "background_color": "#f6f7f9",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
