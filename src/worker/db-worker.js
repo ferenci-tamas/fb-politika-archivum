@@ -240,8 +240,10 @@ function handlePrepareMonthly() {
   }
 }
 
-// Monthly total post count across all authors ("Posztolási aktivitás" view). No FTS
-// at all — just the cached boundaries and the free per-month totals.
+// Posting activity: monthly post counts for the "Posztolási aktivitás" view. With
+// no authors it's the free per-month totals; with authors, one series each from a
+// covering scan of idx_posts_author_time (see Q.monthlyByAuthor) — still no posts
+// rows read. Zero-count months are filled so every line spans the full axis.
 function handleActivity(msg) {
   if (!ready) {
     self.postMessage({ type: 'activity-error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
@@ -252,12 +254,32 @@ function handleActivity(msg) {
     const beforeBytes = vfs.getStats().bytesFetched;
     ensureMonthBounds();
     const totals = monthTotals(monthBounds, meta.max_id);
-    const points = monthBounds.map((m, i) => ({ ym: m.ym, n: totals[i], total: totals[i] }));
+    const authorIds = Array.isArray(msg.authorIds)
+      ? [...new Set(msg.authorIds.filter((n) => Number.isFinite(n)))]
+      : [];
+    let series;
+    if (authorIds.length === 0) {
+      series = [
+        {
+          id: 0,
+          label: 'Összes poszt',
+          total: totals.reduce((sum, t) => sum + t, 0),
+          points: monthBounds.map((m, i) => ({ ym: m.ym, n: totals[i], total: totals[i] }))
+        }
+      ];
+    } else {
+      series = authorIds.map((aid) => {
+        const byYm = new Map(Q.monthlyByAuthor(db, aid).map((r) => [r.ym, r.n]));
+        const points = monthBounds.map((m, i) => ({ ym: m.ym, n: byYm.get(m.ym) || 0, total: totals[i] }));
+        const total = points.reduce((sum, p) => sum + p.n, 0);
+        const label = (authorsById.get(aid) || {}).authorname || String(aid);
+        return { id: aid, label, total, points };
+      });
+    }
     self.postMessage({
       type: 'activity-result',
       reqId: msg.reqId,
-      points,
-      total: totals.reduce((sum, t) => sum + t, 0),
+      series,
       fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
     });
   } catch (err) {

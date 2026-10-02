@@ -342,3 +342,19 @@ export function matchRowidsAsc(db, ftsTable, match) {
     .selectObjects(`SELECT rowid AS id FROM ${ftsTable} WHERE ${ftsTable} MATCH ? ORDER BY rowid`, [match])
     .map((r) => Number(r.id));
 }
+
+/**
+ * Monthly post count for a single author, ascending by month. Covering scan of
+ * idx_posts_author_time (EXPLAIN QUERY PLAN: SEARCH posts USING COVERING INDEX
+ * idx_posts_author_time (authorId=?)) — no posts rows are read. The caller fills in
+ * zero-count months.
+ */
+export function monthlyByAuthor(db, authorId) {
+  return db
+    .selectObjects(
+      "SELECT strftime('%Y-%m', time, 'unixepoch') AS ym, COUNT(*) AS n " +
+        'FROM posts INDEXED BY idx_posts_author_time WHERE authorId = ? GROUP BY ym ORDER BY ym',
+      [authorId]
+    )
+    .map((r) => ({ ym: r.ym, n: Number(r.n) }));
+}

@@ -49,6 +49,11 @@ const els = {
   elemzesNarratives: $('elemzes-narratives'),
   activityStatus: $('activity-status'),
   activityChart: $('activity-chart'),
+  activityAuthorCombobox: $('activity-author-combobox'),
+  activityAuthorInput: $('activity-author-input'),
+  activityAuthorListbox: $('activity-author-listbox'),
+  activityAuthorChips: $('activity-author-chips'),
+  activityAuthorClear: $('activity-author-clear'),
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
@@ -217,6 +222,21 @@ function onReady(msg) {
     onChange: (authorIds) => {
       state.authorIds = authorIds;
       send('first');
+    }
+  });
+  activityAuthorPicker = createAuthorCombobox({
+    container: els.activityAuthorCombobox,
+    input: els.activityAuthorInput,
+    listbox: els.activityAuthorListbox,
+    chips: els.activityAuthorChips,
+    clearButton: els.activityAuthorClear,
+    authors: msg.authors,
+    formatCount,
+    idPrefix: 'activity-author-opt-',
+    onChange: (authorIds) => {
+      activityAuthorIds = authorIds;
+      lastActivity = null; // selection changed — refetch
+      runActivity();
     }
   });
   setupDateBounds(msg.meta);
@@ -549,7 +569,9 @@ let lastMonthly = null; // most recent { series }; re-rendered on ratio toggle, 
 // Elemzés sub-view (dropdown): 'activity' (all posts) or 'narratives' (phrase search).
 let elemzesView = 'narratives';
 let activityReqId = 0;
-let lastActivity = null; // cached monthly totals (static for the session)
+let activityAuthorIds = [];
+let activityAuthorPicker = null;
+let lastActivity = null; // cached { key, series } for the current author selection
 
 function addPhraseRow(value = '') {
   if (els.analysisPhrases.querySelectorAll('.analysis-phrase-row').length >= MAX_PHRASES) return null;
@@ -740,34 +762,51 @@ function showElemzesView(view) {
   else prepareAnalysis();
 }
 
+// Stable cache key for the current author selection.
+function activityKey() {
+  return activityAuthorIds.slice().sort((a, b) => a - b).join(',');
+}
+
 function prepareActivity() {
   if (!state.ready) {
     els.activityStatus.textContent = 'Az adatbázis betöltése folyamatban…';
     return; // onReady re-invokes showElemzesView once the DB is ready
   }
-  if (lastActivity) {
-    drawActivityChart();
+  if (lastActivity && lastActivity.key === activityKey()) {
+    drawActivityChart(); // same selection — re-render the cached result
     return;
   }
+  runActivity();
+}
+
+function runActivity() {
   activityReqId += 1;
   els.activityStatus.textContent = 'Számítás…';
   const loading = el('div', { class: 'chart-loading', 'aria-hidden': 'true' }, el('div', { class: 'spinner' }));
   els.activityChart.replaceChildren(loading);
-  worker.postMessage({ type: 'activity', reqId: activityReqId });
+  worker.postMessage({ type: 'activity', reqId: activityReqId, authorIds: activityAuthorIds });
 }
 
 function onActivityResult(msg) {
-  lastActivity = { points: msg.points, total: msg.total };
+  lastActivity = { key: activityKey(), series: msg.series };
   drawActivityChart();
 }
 
 function drawActivityChart() {
   if (!lastActivity) return;
-  els.activityStatus.textContent = `${formatCount(lastActivity.total)} poszt havi eloszlása`;
-  renderLineChart(els.activityChart, [{ label: 'Összes poszt', points: lastActivity.points }], {
+  const series = lastActivity.series.map((s) => ({ label: s.label, points: s.points }));
+  const total = lastActivity.series.reduce((sum, s) => sum + s.total, 0);
+  els.activityStatus.textContent =
+    activityAuthorIds.length === 0
+      ? `${formatCount(total)} poszt havi eloszlása`
+      : `${series.length} szerző — összesen ${formatCount(total)} poszt`;
+  renderLineChart(els.activityChart, series, {
     mode: 'count',
     title: 'Posztolási aktivitás időben',
-    ariaLabel: 'A havonta közzétett összes poszt száma, 2008 és 2026 között'
+    ariaLabel:
+      activityAuthorIds.length === 0
+        ? 'A havonta közzétett összes poszt száma, 2008 és 2026 között'
+        : `Havi posztszám szerzőnként: ${series.map((s) => s.label).join(', ')}`
   });
 }
 

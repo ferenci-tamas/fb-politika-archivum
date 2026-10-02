@@ -33,14 +33,14 @@ export function filterAuthors(authors, query) {
  * @param {(authorIds:number[])=>void} opts.onChange called with the selected ids
  * @returns {{reset:()=>void}}
  */
-export function createAuthorCombobox({ container, input, listbox, chips, clearButton, authors, formatCount, onChange }) {
+export function createAuthorCombobox({ container, input, listbox, chips, clearButton, authors, formatCount, onChange, idPrefix = 'author-opt-' }) {
   const authorsById = new Map(authors.map((a) => [a.authorId, a]));
   const selected = new Set();
   let open = false;
   let items = [];
   let activeIndex = -1;
 
-  const optionId = (a) => `author-opt-${a.authorId}`;
+  const optionId = (a) => `${idPrefix}${a.authorId}`;
   const emitChange = () => onChange([...selected]);
 
   function render(query) {

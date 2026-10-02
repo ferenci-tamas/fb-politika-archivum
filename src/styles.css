@@ -774,6 +774,10 @@ button:disabled {
   font-size: 1.2rem;
   margin: 4px 2px 0;
 }
+.activity-controls {
+  margin: 12px 0 4px;
+  max-width: 360px;
+}
 .analysis-hint {
   margin: 10px 2px 0;
   color: var(--muted);
