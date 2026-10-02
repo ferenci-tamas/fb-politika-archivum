@@ -552,9 +552,14 @@ function runAnalysis() {
   }
   analysisReqId += 1;
   els.analysisStatus.textContent = 'Számítás…';
+  // Spinner (decorative; the status text above announces for screen readers),
+  // matching the Adatbázis results-loading indicator.
   const loading = document.createElement('div');
   loading.className = 'chart-loading';
-  loading.textContent = 'Grafikon számítása…';
+  loading.setAttribute('aria-hidden', 'true');
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  loading.append(spinner);
   els.analysisChart.replaceChildren(loading);
   worker.postMessage({
     type: 'monthly',
