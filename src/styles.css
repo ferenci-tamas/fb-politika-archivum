@@ -937,15 +937,15 @@ button:disabled {
   .tabs {
     padding: 0 12px;
   }
-  /* Anchor the Elemzés dropdown menu to the tab bar (not the button) so its 240px
-     width can't run off the right edge on a narrow screen. .tabs is sticky, so with
-     the dropdown static the menu resolves against it; 12px matches the tabs padding. */
+  /* Right-align the Elemzés dropdown menu to the tab bar so its 240px width can't run
+     off the right edge on a narrow screen. .tabs is sticky, so with the dropdown static
+     the menu resolves against it; 12px matches the tabs padding (the content gutter). */
   .tab-dropdown {
     position: static;
   }
   .tab-menu {
-    left: 12px;
-    right: auto;
+    left: auto;
+    right: 12px;
   }
   .field {
     flex: 1 1 140px;
