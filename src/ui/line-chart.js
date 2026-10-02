@@ -154,9 +154,9 @@ function exportChartPng() {
   const muted = cssVar('--muted', '#5b636e');
   const { series, mode } = last;
   const multi = series.length > 1; // only reserve room for a legend when it is shown
-  const subtitle = mode === 'ratio'
+  const subtitle = last.subtitle || (mode === 'ratio'
     ? '(arány az összes poszt számához viszonyítva)'
-    : '(posztok száma havonta)';
+    : '(posztok száma havonta)');
   const titleText =
     last.title ||
     (series.length === 1
@@ -243,7 +243,7 @@ export function preloadChart() {
  * @param {{label:string, points:{ym:string,n:number,total:number}[]}[]} series
  * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
  */
-export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '' } = {}) {
+export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '' } = {}) {
   if (!container) return;
   disposeChart();
   if (!series || series.length === 0) {
@@ -251,7 +251,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     clear(container);
     return;
   }
-  last = { container, series, ariaLabel, mode, title };
+  last = { container, series, ariaLabel, mode, title, subtitle };
 
   let echarts;
   try {
@@ -291,7 +291,7 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title });
+      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle });
     });
   }
 }

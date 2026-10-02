@@ -118,3 +118,8 @@ test('narratives ratio default is unaffected by the activity ratio semantics', (
   assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma').ratio, true); // still defaults on
   assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma&ratio=0').ratio, false);
 });
+
+test('analysis links sub-view round-trips with no parameters', () => {
+  assert.equal(encodeAnalysisToHash({ view: 'links' }), 'view=links');
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&view=links').view, 'links');
+});

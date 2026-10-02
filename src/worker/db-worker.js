@@ -47,6 +47,10 @@ let monthBounds = null;
 // Boundaries shipped in the manifest (MANIFEST_FORMAT >= 2), when present — lets us
 // skip the one-time time-index scan entirely.
 let manifestMonthBounds = null;
+// Per-month link counts shipped in the manifest (MANIFEST_FORMAT >= 3), when present.
+// Unlike the boundaries these have no scan fallback, so the link-availability view is
+// only available when the manifest carries them.
+let linkMonthly = null;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -97,6 +101,14 @@ async function init() {
     }
     if (Array.isArray(manifest.monthBounds)) {
       manifestMonthBounds = manifest.monthBounds.map((m) => ({ ym: m.ym, lo: Number(m.lo) }));
+      // Link counts (MANIFEST_FORMAT >= 3) ride on the same entries when present.
+      if (manifest.monthBounds.some((m) => m && m.links != null)) {
+        linkMonthly = manifest.monthBounds.map((m) => ({
+          ym: m.ym,
+          links: Number(m.links) || 0,
+          unavail: Number(m.unavail) || 0
+        }));
+      }
     }
 
     const partMap = new PartMap(manifest);
@@ -155,6 +167,7 @@ self.onmessage = (event) => {
   if (msg.type === 'monthly') return void handleMonthly(msg);
   if (msg.type === 'prepare-monthly') return void handlePrepareMonthly();
   if (msg.type === 'activity') return void handleActivity(msg);
+  if (msg.type === 'link-availability') return void handleLinkAvailability(msg);
 };
 
 async function handleQuery(msg) {
@@ -291,6 +304,22 @@ function handleActivity(msg) {
       message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
     });
   }
+}
+
+// Link-rot: the monthly share of unavailable links, straight from the manifest
+// (MANIFEST_FORMAT >= 3). There is no scan fallback, so `series` is null when the
+// manifest predates the link counts — the UI then shows a "needs a rebuild" notice.
+function handleLinkAvailability(msg) {
+  if (!linkMonthly) {
+    self.postMessage({ type: 'link-availability-result', reqId: msg.reqId, series: null });
+    return;
+  }
+  const points = linkMonthly.map((m) => ({ ym: m.ym, n: m.unavail, total: m.links }));
+  self.postMessage({
+    type: 'link-availability-result',
+    reqId: msg.reqId,
+    series: [{ label: 'Elérhetetlen linkek', points }]
+  });
 }
 
 // Monthly post-count histogram for a search: bucket the matching FTS rowids into

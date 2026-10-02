@@ -51,17 +51,20 @@ SCHEMA_VERSION <- 2L
 
 # "format" of the parts manifest (manifest.json and latest.json, section 15).
 # It describes how the archive is split, not what is in it, so it is versioned
-# independently of SCHEMA_VERSION. 2: builtAt, schemaVersion (archive_meta
+# independently of SCHEMA_VERSION. 3: builtAt, schemaVersion (archive_meta
 # 'schema_version', so a client can reject an archive it cannot read before
 # fetching any of it), file, and size and md5 of the whole archive, pageSize,
-# partSize, monthBounds (an array of {ym, lo}: the smallest id in each year-month;
-# ids are assigned in (time, postId) order, so these partition the archive by month
-# exactly, letting the website bucket search hits per month without scanning the
-# time index), and parts, an array of {name, offset, size, md5} for consecutive
-# page-aligned byte ranges (each of partSize bytes except the last) that
+# partSize, monthBounds (an array of {ym, lo, links, unavail}: per year-month the
+# smallest id -- ids are assigned in (time, postId) order, so these partition the
+# archive by month exactly, letting the website bucket search hits per month without
+# scanning the time index -- plus that month's total and unavailable link counts for
+# the link-availability chart), and parts, an array of {name, offset, size, md5} for
+# consecutive page-aligned byte ranges (each of partSize bytes except the last) that
 # concatenate to the archive; latest.json adds base, the build folder relative
-# to latest.json. A client treats monthBounds as optional (older format: scan).
-MANIFEST_FORMAT <- 2L
+# to latest.json. A client treats monthBounds as optional: {ym, lo} can be rebuilt
+# with a time-index scan, but the link counts have no cheap fallback (they need a
+# links-table scan), so the chart relies on the manifest.
+MANIFEST_FORMAT <- 3L
 
 # Diagnostics only. Use words that definitely occur in the data.
 TEST_SEARCH_TERM <- "az"
@@ -831,14 +834,21 @@ if (SPLIT_FOR_CDN) local({
 
   ro <- dbConnect(SQLite(), OUTPUT_FILE, flags = SQLITE_RO)
   built_at <- dbGetQuery(ro, "SELECT value FROM archive_meta WHERE key = 'built_at'")$value
-  # Smallest id per month, for the website's monthly histogram (Elemzés tab). ids
-  # are assigned in (time, postId) order, so these breakpoints partition the archive
-  # by month exactly; shipping them saves the browser a full scan of the time index
-  # on the first search (see src/lib/monthly.js). jsonlite serializes this
-  # data.frame as an array of {ym, lo} records.
+  # Per-month metadata for the website's Elemzés tab. ids are assigned in (time,
+  # postId) order, so MIN(id) per month ("lo") partitions the archive by month
+  # exactly; shipping these saves the browser a full scan of the time index on the
+  # first search (see src/lib/monthly.js). Each row also carries that month's link
+  # counts -- total and unavailable, via a LEFT JOIN so post-months with no links are
+  # kept with zeros -- for the link-availability chart; unlike lo, these cannot be
+  # cheaply recomputed in the browser, so the manifest is their only source. jsonlite
+  # serializes this data.frame as an array of {ym, lo, links, unavail} records.
   month_bounds <- dbGetQuery(ro,
-    "SELECT strftime('%Y-%m', time, 'unixepoch') AS ym, MIN(id) AS lo
-     FROM posts GROUP BY ym ORDER BY lo")
+    "SELECT strftime('%Y-%m', p.time, 'unixepoch') AS ym,
+            MIN(p.id) AS lo,
+            COUNT(l.available) AS links,
+            SUM(CASE WHEN l.available = 0 THEN 1 ELSE 0 END) AS unavail
+     FROM posts p LEFT JOIN links l ON l.postId = p.postId
+     GROUP BY ym ORDER BY lo")
   dbDisconnect(ro)
   version_dir <- file.path(CDN_PARTS_DIR, built_at)
   unlink(version_dir, recursive = TRUE)

@@ -47,6 +47,9 @@ const els = {
   elemzesMenu: $('elemzes-menu'),
   elemzesActivity: $('elemzes-activity'),
   elemzesNarratives: $('elemzes-narratives'),
+  elemzesLinks: $('elemzes-links'),
+  linksStatus: $('links-status'),
+  linksChart: $('links-chart'),
   activityStatus: $('activity-status'),
   activityChart: $('activity-chart'),
   activityAuthorCombobox: $('activity-author-combobox'),
@@ -154,6 +157,9 @@ function initDatabase() {
         break;
       case 'activity-error':
         if (msg.reqId === activityReqId) onActivityError(msg);
+        break;
+      case 'link-availability-result':
+        if (msg.reqId === linkReqId) onLinkResult(msg);
         break;
       default:
         break;
@@ -570,12 +576,15 @@ let nextPhraseId = 0;
 // At most this many phrases/series — matches the chart colour palette (line-chart.js).
 const MAX_PHRASES = 8;
 let lastMonthly = null; // most recent { series }; re-rendered on ratio toggle, no re-query
-// Elemzés sub-view (dropdown): 'activity' (all posts) or 'narratives' (phrase search).
+// Elemzés sub-view (dropdown): 'activity' (all posts), 'narratives' (phrase search),
+// or 'links' (link-availability over time).
 let elemzesView = 'narratives';
 let activityReqId = 0;
 let activityAuthorIds = [];
 let activityAuthorPicker = null;
 let lastActivity = null; // cached { key, series } for the current author selection
+let linkReqId = 0;
+let lastLink = null; // cached { series } for the link-availability view (static per session)
 
 function addPhraseRow(value = '') {
   if (els.analysisPhrases.querySelectorAll('.analysis-phrase-row').length >= MAX_PHRASES) return null;
@@ -762,15 +771,18 @@ function setElemzesMenuOpen(open) {
   els.tabElemzes.setAttribute('aria-expanded', String(open));
 }
 
-// Show one sub-view ('activity' | 'narratives') and run it. Called from setActiveTab.
+// Show one sub-view ('activity' | 'narratives' | 'links') and run it. Called from
+// setActiveTab.
 function showElemzesView(view) {
-  elemzesView = view === 'activity' ? 'activity' : 'narratives';
+  elemzesView = view === 'activity' ? 'activity' : view === 'links' ? 'links' : 'narratives';
   els.elemzesActivity.hidden = elemzesView !== 'activity';
   els.elemzesNarratives.hidden = elemzesView !== 'narratives';
+  els.elemzesLinks.hidden = elemzesView !== 'links';
   for (const item of els.elemzesMenu.querySelectorAll('.tab-menu-item')) {
     item.setAttribute('aria-current', String(item.dataset.view === elemzesView));
   }
   if (elemzesView === 'activity') prepareActivity();
+  else if (elemzesView === 'links') prepareLinks();
   else prepareAnalysis();
 }
 
@@ -839,6 +851,55 @@ function onActivityError(msg) {
   els.activityChart.replaceChildren();
 }
 
+// --- Elemzés: link-availability (link-rot) sub-view -------------------------
+// A single static line: the monthly share of unavailable links, read from the
+// manifest (MANIFEST_FORMAT >= 3). No per-session input, so the result is cached once.
+function prepareLinks() {
+  if (!state.ready) {
+    els.linksStatus.textContent = 'Az adatbázis betöltése folyamatban…';
+    return; // onReady re-invokes showElemzesView once the DB is ready
+  }
+  if (lastLink) {
+    drawLinkChart(); // already fetched this session — just re-render
+    return;
+  }
+  runLinks();
+}
+
+function runLinks() {
+  linkReqId += 1;
+  els.linksStatus.textContent = 'Számítás…';
+  const loading = el('div', { class: 'chart-loading', 'aria-hidden': 'true' }, el('div', { class: 'spinner' }));
+  els.linksChart.replaceChildren(loading);
+  worker.postMessage({ type: 'link-availability', reqId: linkReqId });
+}
+
+function onLinkResult(msg) {
+  lastLink = { series: msg.series };
+  drawLinkChart();
+}
+
+function drawLinkChart() {
+  if (!lastLink) return;
+  if (!lastLink.series) {
+    // The manifest predates the link counts (MANIFEST_FORMAT < 3): no scan fallback.
+    els.linksStatus.textContent = 'Ehhez a nézethez frissített adatbázis szükséges — a linkstatisztika még nincs a leíróban.';
+    els.linksChart.replaceChildren();
+    return;
+  }
+  const points = lastLink.series[0].points;
+  const totalLinks = points.reduce((sum, p) => sum + p.total, 0);
+  const totalUnavail = points.reduce((sum, p) => sum + p.n, 0);
+  const pct = totalLinks > 0 ? (100 * totalUnavail) / totalLinks : 0;
+  els.linksStatus.textContent = `${formatCount(totalLinks)} link — ${pct.toFixed(1)}% elérhetetlen`;
+  renderLineChart(els.linksChart, lastLink.series, {
+    mode: 'ratio',
+    title: 'Link-avulási statisztika',
+    subtitle: '(az elérhetetlen linkek aránya havonta)',
+    ariaLabel: 'A posztokban megosztott linkek havi elérhetetlenségi aránya'
+  });
+}
+
 // The Elemzés tab button opens a menu to choose the sub-view (rather than switching
 // directly); picking an item activates the tab with that view.
 els.tabElemzes.addEventListener('click', (e) => {
@@ -858,7 +919,7 @@ els.elemzesMenu.addEventListener('click', (e) => {
   const item = e.target.closest('.tab-menu-item');
   if (!item) return;
   setElemzesMenuOpen(false);
-  elemzesView = item.dataset.view === 'activity' ? 'activity' : 'narratives';
+  elemzesView = item.dataset.view === 'activity' ? 'activity' : item.dataset.view === 'links' ? 'links' : 'narratives';
   setActiveTab('elemzes'); // shows the sub-view + updates the hash
   els.tabElemzes.focus();
 });
@@ -891,7 +952,7 @@ function applyHashAnalysisToState() {
   const a = onElemzes
     ? decodeHashToAnalysis(location.hash)
     : { view: 'narratives', phrases: [], accentSensitive: false, ratio: true };
-  elemzesView = a.view === 'activity' ? 'activity' : 'narratives';
+  elemzesView = a.view === 'activity' ? 'activity' : a.view === 'links' ? 'links' : 'narratives';
   els.analysisAccent.checked = a.accentSensitive;
   // Route the decoded ratio to its sub-view; the other sub-view keeps its default.
   if (a.view === 'activity') {

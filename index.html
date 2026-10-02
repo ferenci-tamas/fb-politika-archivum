@@ -48,6 +48,7 @@
         <div class="tab-menu" id="elemzes-menu" role="menu" aria-label="Elemzés nézetek" hidden>
           <button type="button" class="tab-menu-item" role="menuitem" data-view="activity">Posztolási aktivitás időben</button>
           <button type="button" class="tab-menu-item" role="menuitem" data-view="narratives">Narratívák alakulása időben</button>
+          <button type="button" class="tab-menu-item" role="menuitem" data-view="links">Link-avulási statisztika</button>
         </div>
       </div>
     </div>
@@ -272,6 +273,18 @@
           </div>
 
           <div id="analysis-chart" class="analysis-chart" aria-live="polite"></div>
+        </div>
+
+        <div id="elemzes-links" class="elemzes-view" hidden>
+          <h2 class="elemzes-view-title">Link-avulási statisztika</h2>
+          <p class="analysis-hint">
+            A posztokban megosztott linkek közül havonta mekkora arányban nem érhetők már el. A ritka,
+            100 linknél kevesebbet tartalmazó hónapok kimaradnak.
+          </p>
+          <div class="status-bar">
+            <span id="links-status" class="result-count" aria-live="polite"></span>
+          </div>
+          <div id="links-chart" class="analysis-chart" aria-live="polite"></div>
         </div>
       </section>
     </main>

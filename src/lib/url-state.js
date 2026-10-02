@@ -53,12 +53,13 @@ export function decodeHashToView(hash, opts) {
 }
 
 // --- analysis (Elemzés) view -----------------------------------------------
-// Two sub-views live under `tab=elemzes`. The narratives sub-view carries one or
+// Three sub-views live under `tab=elemzes`. The narratives sub-view carries one or
 // more search phrases (repeated `q`), the accent-sensitive flag and its ratio mode
 // (on by default, so `ratio=0` turns it off). The activity sub-view
 // (`view=activity`) carries its author selection by NAME (repeated `author`, stable
 // across rebuilds — the caller maps names <-> ids) and its own ratio mode (off by
-// default, so `ratio=1` turns it on). `q` never collides with the Adatbázis search.
+// default, so `ratio=1` turns it on). The link-availability sub-view (`view=links`)
+// carries no parameters of its own. `q` never collides with the Adatbázis search.
 
 /**
  * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames?:string[]}} v
@@ -77,6 +78,11 @@ export function encodeAnalysisToHash(v) {
     if (v.ratio && p.getAll('author').length > 0) p.set('ratio', '1');
     return p.toString();
   }
+  // The link-availability sub-view has no parameters of its own.
+  if (v.view === 'links') {
+    p.set('view', 'links');
+    return p.toString();
+  }
   // narratives (the default sub-view): one or more phrases plus the toggles.
   for (const phrase of v.phrases || []) {
     if (phrase && phrase.trim() !== '') p.append('q', phrase.trim());
@@ -93,7 +99,8 @@ export function encodeAnalysisToHash(v) {
  */
 export function decodeHashToAnalysis(hash) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
-  const view = p.get('view') === 'activity' ? 'activity' : 'narratives';
+  const rawView = p.get('view');
+  const view = rawView === 'activity' ? 'activity' : rawView === 'links' ? 'links' : 'narratives';
   return {
     view,
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
