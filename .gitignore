@@ -8,7 +8,7 @@ dist-ssr/
 # never be committed (hundreds of MB). Kept locally for tests.
 archive.sqlite
 archive.sqlite-*
-archive-parts/[0-9]*/
+archive-parts/
 toconvert.rds
 
 # Editor / OS
