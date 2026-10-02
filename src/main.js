@@ -236,6 +236,7 @@ function onReady(msg) {
     idPrefix: 'activity-author-opt-',
     onChange: (authorIds) => {
       activityAuthorIds = authorIds;
+      syncActivityRatioControl(); // untick + disable at once when the selection empties
       lastActivity = null; // selection changed — refetch
       runActivity();
     }
@@ -804,13 +805,20 @@ function onActivityResult(msg) {
   drawActivityChart();
 }
 
-function drawActivityChart() {
-  if (!lastActivity) return;
-  // The ratio (an author's posts / all posts that month) only means something for a
-  // subset of authors; with none selected the single series *is* the total, so the
-  // toggle is disabled and the chart stays in count mode.
+// The ratio (an author's posts / all posts that month) only means something for a
+// subset of authors; with none selected the single series *is* the total, so the view
+// is always count mode. Reflect that in the control: disable it AND show it unticked,
+// never greyed-but-ticked. Returns whether any author is selected.
+function syncActivityRatioControl() {
   const hasAuthors = activityAuthorIds.length > 0;
   els.activityRatio.disabled = !hasAuthors;
+  if (!hasAuthors) els.activityRatio.checked = false;
+  return hasAuthors;
+}
+
+function drawActivityChart() {
+  if (!lastActivity) return;
+  const hasAuthors = syncActivityRatioControl();
   const ratio = hasAuthors && els.activityRatio.checked;
   const series = lastActivity.series.map((s) => ({ label: s.label, points: s.points }));
   const total = lastActivity.series.reduce((sum, s) => sum + s.total, 0);
