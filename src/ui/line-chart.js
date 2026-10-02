@@ -140,7 +140,7 @@ function exportChartPng({ mode, term }) {
     animation: false,
     grid: { top: 74 },
     title: {
-      text: `A(z) „${term}” keresőkifejezés előfordulása az időben`,
+      text: `A(z) ${term} keresőkifejezés előfordulása az időben`,
       subtext: subtitle,
       left: 'center',
       top: 10,
@@ -158,6 +158,10 @@ function exportChartPng({ mode, term }) {
       }
     ]
   });
+
+  // Clear any hover crosshair so its dashed axis-pointer line is not captured.
+  chartInstance.dispatchAction({ type: 'hideTip' });
+  chartInstance.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' });
 
   const url = chartInstance.getDataURL({
     type: 'png',
