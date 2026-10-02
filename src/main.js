@@ -243,6 +243,7 @@ function onReady(msg) {
   hideAppLoading();
   setControlsDisabled(false);
   applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
+  restoreActivityAuthorsFromHash(); // restore the Elemzés activity author selection, if any
   runFirstQueryIfNeeded(); // only queries if the Adatbázis tab is already showing
   if (activeTab === 'elemzes') showElemzesView(elemzesView); // run the current sub-view
 }
@@ -452,7 +453,8 @@ function updateHash() {
       view: elemzesView,
       phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
       accentSensitive: els.analysisAccent.checked,
-      ratio: els.analysisRatio.checked
+      ratio: els.analysisRatio.checked,
+      authorNames: activityAuthorIds.map((id) => authorIdToName.get(id)).filter(Boolean)
     });
     body = query ? `tab=elemzes&${query}` : 'tab=elemzes';
   }
@@ -780,6 +782,7 @@ function prepareActivity() {
 }
 
 function runActivity() {
+  updateHash(); // keep the shareable URL in sync with the author selection
   activityReqId += 1;
   els.activityStatus.textContent = 'Számítás…';
   const loading = el('div', { class: 'chart-loading', 'aria-hidden': 'true' }, el('div', { class: 'spinner' }));
@@ -876,6 +879,18 @@ function applyHashAnalysisToState() {
   updateRemoveButtons();
 }
 
+// Restore the activity sub-view's author selection from an Elemzés deep link.
+// Authors travel by NAME (stable across rebuilds), so this needs the author maps
+// and the picker: it runs from onReady and on hashchange, never at module load.
+// setSelected does not fire the picker's onChange, so the follow-on prepareActivity
+// (via setActiveTab) is what refetches when the selection actually changed.
+function restoreActivityAuthorsFromHash() {
+  const onElemzes = new URLSearchParams(location.hash.replace(/^#/, '')).get('tab') === 'elemzes';
+  const names = onElemzes ? decodeHashToAnalysis(location.hash).authorNames : [];
+  activityAuthorIds = [...new Set(names.map((n) => authorNameToId.get(n)).filter((id) => Number.isFinite(id)))];
+  if (activityAuthorPicker) activityAuthorPicker.setSelected(activityAuthorIds);
+}
+
 applyHashAnalysisToState(); // seed the phrase rows (restoring an Elemzés deep link)
 
 // Expand / collapse long post text (event delegation on the table body).
@@ -964,7 +979,10 @@ window.addEventListener('hashchange', () => {
     applyHashFiltersToState();
     firstQueryDone = true;
   }
-  if (tab === 'elemzes') applyHashAnalysisToState();
+  if (tab === 'elemzes') {
+    applyHashAnalysisToState();
+    restoreActivityAuthorsFromHash();
+  }
   setActiveTab(tab, { updateUrl: false });
   if (tab === 'adatbazis' && state.ready) send('first');
 });

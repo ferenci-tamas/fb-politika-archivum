@@ -22,7 +22,7 @@ export function encodeViewToHash(view, opts) {
   const p = new URLSearchParams();
   if (view.search && view.search.trim() !== '') p.set('q', view.search);
   if (view.accentSensitive) p.set('accent', '1');
-  for (const name of view.authorNames || []) if (name) p.append('author', name);
+  for (const name of view.authorNames || []) if (name && name.trim() !== '') p.append('author', name);
   if (isDateInput(view.dateFrom)) p.set('from', view.dateFrom);
   if (isDateInput(view.dateTo)) p.set('to', view.dateTo);
   if (view.sort && view.sort !== opts.defaultSort) p.set('sort', view.sort);
@@ -53,21 +53,32 @@ export function decodeHashToView(hash, opts) {
 }
 
 // --- analysis (Elemzés) view -----------------------------------------------
-// One or more search phrases (repeated `q`), the accent-sensitive flag, and the
-// ratio mode (on by default). Lives under `tab=elemzes`, so `q` never collides
-// with the Adatbázis search above.
+// Two sub-views live under `tab=elemzes`. The narratives sub-view carries one or
+// more search phrases (repeated `q`), the accent-sensitive flag and the ratio mode
+// (on by default). The activity sub-view (`view=activity`) carries its author
+// selection by NAME (repeated `author`, stable across rebuilds) — the caller maps
+// names <-> ids. `q` never collides with the Adatbázis search above.
 
 /**
- * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean}} v
+ * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames?:string[]}} v
  * @returns {string} hash body (without a leading '#'); '' for the default empty narratives view
  */
 export function encodeAnalysisToHash(v) {
   const p = new URLSearchParams();
-  if (v.view === 'activity') p.set('view', 'activity'); // 'narratives' is the default
+  // The activity sub-view carries only its author selection (by name); phrases,
+  // accent and ratio belong to the narratives sub-view and are irrelevant here.
+  if (v.view === 'activity') {
+    p.set('view', 'activity');
+    for (const name of v.authorNames || []) {
+      if (name && name.trim() !== '') p.append('author', name);
+    }
+    return p.toString();
+  }
+  // narratives (the default sub-view): one or more phrases plus the toggles.
   for (const phrase of v.phrases || []) {
     if (phrase && phrase.trim() !== '') p.append('q', phrase.trim());
   }
-  if (v.view !== 'activity' && p.getAll('q').length === 0) return '';
+  if (p.getAll('q').length === 0) return ''; // an empty narratives view is the default
   if (v.accentSensitive) p.set('accent', '1');
   if (v.ratio === false) p.set('ratio', '0'); // ratio defaults to on
   return p.toString();
@@ -75,7 +86,7 @@ export function encodeAnalysisToHash(v) {
 
 /**
  * @param {string} hash the location hash (leading '#' optional)
- * @returns {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean}}
+ * @returns {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames:string[]}}
  */
 export function decodeHashToAnalysis(hash) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
@@ -83,6 +94,7 @@ export function decodeHashToAnalysis(hash) {
     view: p.get('view') === 'activity' ? 'activity' : 'narratives',
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
     accentSensitive: p.get('accent') === '1',
-    ratio: p.get('ratio') !== '0'
+    ratio: p.get('ratio') !== '0',
+    authorNames: p.getAll('author').filter((n) => n && n.trim() !== '')
   };
 }

@@ -22,6 +22,11 @@ test('round-trips a full view (authors by name, with diacritics/spaces)', () => 
   assert.equal(back.pageSize, 100);
 });
 
+test('view hash drops blank author names (same guard as the analysis encoder)', () => {
+  const hash = encodeViewToHash({ search: '', accentSensitive: false, authorNames: ['  ', 'Áder János'], dateFrom: '', dateTo: '', sort: 'date_desc', pageSize: 50 }, ENC);
+  assert.deepEqual(new URLSearchParams(hash).getAll('author'), ['Áder János']);
+});
+
 test('omits default sort and page size', () => {
   assert.equal(encodeViewToHash({ search: 'x', accentSensitive: false, authorNames: [], dateFrom: '', dateTo: '', sort: 'date_desc', pageSize: 50 }, ENC), 'q=x');
 });
@@ -63,4 +68,37 @@ test('analysis decode defaults ratio to on and tolerates a leading #', () => {
 test('analysis hash carries the activity sub-view with no phrases', () => {
   assert.equal(encodeAnalysisToHash({ view: 'activity', phrases: [], accentSensitive: false, ratio: true }), 'view=activity');
   assert.equal(decodeHashToAnalysis('#tab=elemzes&view=activity').view, 'activity');
+});
+
+test('activity hash carries authors by name and drops phrase/toggle state', () => {
+  const hash = encodeAnalysisToHash({
+    view: 'activity',
+    phrases: ['ignored'], // narratives state must never leak into an activity link
+    accentSensitive: true,
+    ratio: false,
+    authorNames: ['Áder János', 'Bányai Gábor']
+  });
+  const p = new URLSearchParams(hash);
+  assert.equal(p.get('view'), 'activity');
+  assert.deepEqual(p.getAll('author'), ['Áder János', 'Bányai Gábor']);
+  assert.deepEqual(p.getAll('q'), []);
+  assert.equal(p.get('accent'), null);
+  assert.equal(p.get('ratio'), null);
+  const back = decodeHashToAnalysis('#tab=elemzes&' + hash);
+  assert.equal(back.view, 'activity');
+  assert.deepEqual(back.authorNames, ['Áder János', 'Bányai Gábor']);
+  assert.deepEqual(back.phrases, []);
+});
+
+test('activity hash with no authors is just the sub-view', () => {
+  assert.equal(encodeAnalysisToHash({ view: 'activity', phrases: [], authorNames: [] }), 'view=activity');
+  assert.deepEqual(decodeHashToAnalysis('#tab=elemzes&view=activity').authorNames, []);
+});
+
+test('narratives hash never carries authors', () => {
+  const hash = encodeAnalysisToHash({ view: 'narratives', phrases: ['infláció'], authorNames: ['Áder János'] });
+  const p = new URLSearchParams(hash);
+  assert.deepEqual(p.getAll('q'), ['infláció']);
+  assert.deepEqual(p.getAll('author'), []);
+  assert.deepEqual(decodeHashToAnalysis('#' + hash).authorNames, []);
 });
