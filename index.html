@@ -210,8 +210,7 @@
         <div id="elemzes-activity" class="elemzes-view" hidden>
           <h2 class="elemzes-view-title">Posztolási aktivitás időben</h2>
           <p class="analysis-hint">
-            A havonta közzétett posztok száma. Szerző nélkül az összes poszt; egy vagy több szerzőt kijelölve
-            szerzőnként külön színű vonal.
+            A havonta közzétett posztok száma. Szerző kiválasztása nélkül az összes poszt száma jelenik meg; egy vagy több szerzőt kiválasztva a szerzőnkénti adatok, külön színnel.
           </p>
           <div class="activity-controls">
             <div class="field">
@@ -250,8 +249,9 @@
         <div id="elemzes-narratives" class="elemzes-view" hidden>
           <h2 class="elemzes-view-title">Narratívák alakulása időben</h2>
           <p class="analysis-hint">
-            Adj meg egy vagy több keresőkifejezést (ugyanaz a szintaxis, mint az Adatbázisban); a grafikon mindegyik
-            havi találatszámát — bejelölve a havi összes poszthoz viszonyított arányát — külön színnel mutatja.
+            Adott keresőkifejezés előfordulásainak száma havonta. Ezzel tetszőleges narratíva, kampánytéma alakulása nyomonkövethető
+            (a keresőkifejezés megalkotásához az Adatbázis pontnál látott minden eszköz használható). Több keresőkifejezés is megadható,
+            ez esetben mindegyik megjelenik az ábrán, külön színnel.
           </p>
           <form id="analysis-controls" class="controls" role="search" aria-label="Elemzés – keresés" autocomplete="off">
             <div id="analysis-phrases" class="analysis-phrases"></div>
@@ -278,8 +278,8 @@
         <div id="elemzes-links" class="elemzes-view" hidden>
           <h2 class="elemzes-view-title">Link-avulási statisztika</h2>
           <p class="analysis-hint">
-            A posztokban megosztott linkek közül havonta mekkora arányban nem érhetők már el. A ritka,
-            100 linknél kevesebbet tartalmazó hónapok kimaradnak.
+            Az adott havi posztokban megosztott linkek közül mekkora arány nem érhető már el 2026 közepén.
+            A 100 linknél kevesebbet tartalmazó hónapok nem jelennek meg az ábrán.
           </p>
           <div class="status-bar">
             <span id="links-status" class="result-count" aria-live="polite"></span>
