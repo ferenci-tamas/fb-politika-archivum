@@ -40,6 +40,7 @@ const els = {
   analysisSearch: $('analysis-search'),
   analysisSearchClear: $('analysis-search-clear'),
   analysisAccent: $('analysis-accent'),
+  analysisRatio: $('analysis-ratio'),
   analysisStatus: $('analysis-status'),
   analysisChart: $('analysis-chart'),
   search: $('search'),
@@ -540,6 +541,7 @@ function runAnalysis() {
   els.analysisSearchClear.hidden = term.trim() === '';
   if (term.trim() === '') {
     analysisReqId += 1; // invalidate any in-flight response
+    lastMonthly = null;
     els.analysisStatus.textContent = '';
     els.analysisChart.replaceChildren();
     return;
@@ -562,21 +564,37 @@ function runAnalysis() {
   });
 }
 
+let lastMonthly = null; // most recent { points, total }; re-rendered on toggle, no re-query
+
 function onMonthlyResult(msg) {
   if (msg.matchEmpty) {
     els.analysisStatus.textContent = 'Adj meg egy keresőkifejezést.';
+    lastMonthly = null;
     els.analysisChart.replaceChildren();
     return;
   }
   if (msg.total === 0) {
     els.analysisStatus.textContent = 'Nincs a keresésnek megfelelő poszt.';
+    lastMonthly = null;
     els.analysisChart.replaceChildren();
     return;
   }
-  const term = els.analysisSearch.value.trim();
+  lastMonthly = { points: msg.points, total: msg.total };
   els.analysisStatus.textContent = `${formatCount(msg.total)} találat havi eloszlása`;
-  renderLineChart(els.analysisChart, msg.points, {
-    ariaLabel: `„${term}”: havi találatszám, összesen ${formatCount(msg.total)} poszt`
+  drawAnalysisChart();
+}
+
+// Draw (or redraw) the cached result in the mode the checkbox selects. Toggling the
+// checkbox re-renders instantly from the same data — no new worker query.
+function drawAnalysisChart() {
+  if (!lastMonthly) return;
+  const ratio = els.analysisRatio.checked;
+  const term = els.analysisSearch.value.trim();
+  renderLineChart(els.analysisChart, lastMonthly.points, {
+    mode: ratio ? 'ratio' : 'count',
+    ariaLabel: ratio
+      ? `„${term}”: havi találatarány a hónap összes posztjának százalékában`
+      : `„${term}”: havi találatszám, összesen ${formatCount(lastMonthly.total)} poszt`
   });
 }
 
@@ -604,6 +622,7 @@ els.analysisSearchClear.addEventListener('click', () => {
   els.analysisSearch.focus();
 });
 els.analysisAccent.addEventListener('change', runAnalysis);
+els.analysisRatio.addEventListener('change', drawAnalysisChart);
 
 // Expand / collapse long post text (event delegation on the table body).
 els.body.addEventListener('click', (e) => {

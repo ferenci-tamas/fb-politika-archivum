@@ -28,3 +28,15 @@ export function bucketByMonth(sortedIds, boundaries) {
   }
   return boundaries.map((m, i) => ({ ym: m.ym, n: counts[i] }));
 }
+
+/**
+ * Total posts in each month, derived from the boundaries alone (no query): month i
+ * spans ids [lo_i, lo_{i+1}), and the last month runs to maxId. Empty calendar
+ * months are simply absent from `boundaries`, which keeps this exact.
+ * @param {{ym:string, lo:number}[]} boundaries ascending by lo
+ * @param {number} maxId largest id in the archive
+ * @returns {number[]} total per month, in the same order as boundaries
+ */
+export function monthTotals(boundaries, maxId) {
+  return boundaries.map((m, i) => (i + 1 < boundaries.length ? boundaries[i + 1].lo : maxId + 1) - m.lo);
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketByMonth } from '../src/lib/monthly.js';
+import { bucketByMonth, monthTotals } from '../src/lib/monthly.js';
 
 const bounds = [
   { ym: '2008-04', lo: 1 },
@@ -40,4 +40,14 @@ test('a month with no matches between two with matches stays zero', () => {
 
 test('empty boundaries yields an empty result', () => {
   assert.deepEqual(bucketByMonth([1, 2, 3], []), []);
+});
+
+test('monthTotals derives per-month totals from boundaries + maxId', () => {
+  // months occupy id ranges [1,11), [11,21), [21,26)
+  assert.deepEqual(monthTotals(bounds, 25), [10, 10, 5]);
+});
+
+test('monthTotals handles the only/last month and empty input', () => {
+  assert.deepEqual(monthTotals([{ ym: '2008-04', lo: 1 }], 100), [100]);
+  assert.deepEqual(monthTotals([], 100), []);
 });

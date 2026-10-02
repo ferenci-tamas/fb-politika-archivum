@@ -24,7 +24,7 @@ import { installRangeVfs } from '../lib/http-vfs.js';
 import { buildFtsMatch } from '../lib/fts-query.js';
 import { parseImages, parseLinks } from '../lib/sanitize.js';
 import * as Q from '../lib/queries.js';
-import { bucketByMonth } from '../lib/monthly.js';
+import { bucketByMonth, monthTotals } from '../lib/monthly.js';
 import { prefetchHydrationPages } from '../lib/btree.js';
 import { makeMultiRangeFetcher } from './multirange.js';
 import { BLOCK_SIZE, MULTIRANGE_PREFETCH, PREFETCH_BUDGET_MS } from '../lib/constants.js';
@@ -251,15 +251,18 @@ function handleMonthly(msg) {
     vfs.clearLastError();
     const beforeBytes = vfs.getStats().bytesFetched;
     ensureMonthBounds();
+    // Per-month totals come free from the boundaries (ids are contiguous in time
+    // order), so the ratio view needs no extra query — see src/lib/monthly.js.
+    const totals = monthTotals(monthBounds, meta.max_id);
     const match = msg.search ? buildFtsMatch(msg.search) : '';
     let points;
     let total = 0;
     if (match === '') {
-      points = monthBounds.map((m) => ({ ym: m.ym, n: 0 }));
+      points = monthBounds.map((m, i) => ({ ym: m.ym, n: 0, total: totals[i] }));
     } else {
       const ftsTable = msg.accentSensitive ? FTS_TABLE.sensitive : FTS_TABLE.folded;
       const ids = Q.matchRowidsAsc(db, ftsTable, match);
-      points = bucketByMonth(ids, monthBounds);
+      points = bucketByMonth(ids, monthBounds).map((p, i) => ({ ym: p.ym, n: p.n, total: totals[i] }));
       total = ids.length;
     }
     self.postMessage({

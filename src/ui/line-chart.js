@@ -1,22 +1,26 @@
-// Monthly post-count line chart for the Elemzés tab, rendered with ECharts (SVG
-// renderer) loaded lazily via a dynamic import — ECharts only downloads when a
-// chart is actually shown. The data shaping (toSeriesData) is pure and
-// unit-tested; the rendering needs the DOM + ECharts and is verified in-browser.
+// Monthly line chart for the Elemzés tab, rendered with ECharts (SVG renderer)
+// loaded lazily via a dynamic import — ECharts only downloads when a chart is
+// actually shown. Two modes: absolute monthly counts ('count') and each month's
+// share of its posts ('ratio', shown as a percentage). The data shaping
+// (toSeriesData) is pure and unit-tested; rendering is verified in-browser.
 
 import { clear } from './dom.js';
 import { formatCount } from '../lib/format.js';
 
 /**
- * Convert monthly buckets to ECharts time-series points: [utcMillis, count].
- * Pure (no DOM, no ECharts), so it stays unit-testable in Node.
- * @param {{ym:string, n:number}[]} points
- * @returns {Array<[number, number]>}
+ * Convert monthly buckets to ECharts data items. Pure (no DOM/ECharts), so it
+ * stays unit-testable in Node. Each item keeps n and total so the tooltip can show
+ * both regardless of mode.
+ * @param {{ym:string, n:number, total:number}[]} points
+ * @param {'count'|'ratio'} mode
+ * @returns {Array<{value:[number, number], n:number, total:number}>}
  */
-export function toSeriesData(points) {
+export function toSeriesData(points, mode = 'count') {
   return points.map((p) => {
-    const year = Number(p.ym.slice(0, 4));
-    const month = Number(p.ym.slice(5, 7));
-    return [Date.UTC(year, month - 1, 1), p.n];
+    const ts = Date.UTC(Number(p.ym.slice(0, 4)), Number(p.ym.slice(5, 7)) - 1, 1);
+    const total = Number(p.total) || 0;
+    const y = mode === 'ratio' ? (total > 0 ? (p.n / total) * 100 : 0) : p.n;
+    return { value: [ts, y], n: p.n, total };
   });
 }
 
@@ -27,12 +31,13 @@ function cssVar(name, fallback) {
   return v || fallback;
 }
 
-function buildOption(points, ariaLabel) {
+function buildOption(points, ariaLabel, mode) {
   const accent = cssVar('--accent', '#1b5fb0');
   const muted = cssVar('--muted', '#5b636e');
   const border = cssVar('--border', '#d4d8de');
   const surface = cssVar('--surface', '#ffffff');
   const text = cssVar('--text', '#1b1f24');
+  const ratio = mode === 'ratio';
   return {
     aria: { enabled: true, label: { enabled: true, description: ariaLabel } },
     grid: { top: 18, right: 20, bottom: 66, left: 56 },
@@ -45,7 +50,12 @@ function buildOption(points, ariaLabel) {
         const p = Array.isArray(params) ? params[0] : params;
         const d = new Date(p.value[0]);
         const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-        return `${ym}<br/><strong>${formatCount(p.value[1])}</strong> találat`;
+        const { n, total } = p.data;
+        if (ratio) {
+          const pct = total > 0 ? (n / total) * 100 : 0;
+          return `${ym}<br/><strong>${pct.toFixed(2)}%</strong> (${formatCount(n)} / ${formatCount(total)})`;
+        }
+        return `${ym}<br/><strong>${formatCount(n)}</strong> találat`;
       }
     },
     toolbox: { feature: { saveAsImage: { title: 'Mentés képként' } }, right: 8, top: 4 },
@@ -61,15 +71,16 @@ function buildOption(points, ariaLabel) {
     },
     yAxis: {
       type: 'value',
-      minInterval: 1,
-      axisLabel: { color: muted },
+      min: 0,
+      minInterval: ratio ? undefined : 1,
+      axisLabel: { color: muted, formatter: ratio ? '{value}%' : undefined },
       splitLine: { lineStyle: { color: border } }
     },
     series: [
       {
         type: 'line',
-        name: 'Havi találatok',
-        data: toSeriesData(points),
+        name: ratio ? 'Havi arány' : 'Havi találatok',
+        data: toSeriesData(points, mode),
         showSymbol: false,
         lineStyle: { color: accent, width: 2 },
         itemStyle: { color: accent }
@@ -79,7 +90,7 @@ function buildOption(points, ariaLabel) {
 }
 
 let chartInstance = null;
-let last = null; // { container, points, ariaLabel } — for re-theming on scheme change
+let last = null; // { container, points, ariaLabel, mode } — for re-theming on scheme change
 
 function disposeChart() {
   if (chartInstance) {
@@ -106,8 +117,9 @@ export function preloadChart() {
 /**
  * Render the monthly chart into `container`. Async because ECharts is loaded on
  * demand; the caller fires it and does not await.
+ * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
  */
-export async function renderLineChart(container, points, { ariaLabel } = {}) {
+export async function renderLineChart(container, points, { ariaLabel, mode = 'count' } = {}) {
   if (!container) return;
   disposeChart();
   if (!points || points.length === 0) {
@@ -115,7 +127,7 @@ export async function renderLineChart(container, points, { ariaLabel } = {}) {
     clear(container);
     return;
   }
-  last = { container, points, ariaLabel };
+  last = { container, points, ariaLabel, mode };
 
   let echarts;
   try {
@@ -125,8 +137,8 @@ export async function renderLineChart(container, points, { ariaLabel } = {}) {
     return;
   }
 
-  // A newer render may have superseded this one while ECharts was loading.
-  if (!last || last.container !== container || last.points !== points) return;
+  // A newer render (new search or toggled mode) may have superseded this one.
+  if (!last || last.container !== container || last.points !== points || last.mode !== mode) return;
 
   try {
     clear(container); // replace the loading placeholder only now that ECharts is ready
@@ -136,7 +148,7 @@ export async function renderLineChart(container, points, { ariaLabel } = {}) {
     if (ariaLabel) host.setAttribute('aria-label', ariaLabel);
     container.append(host);
     chartInstance = echarts.init(host, null, { renderer: 'svg' });
-    chartInstance.setOption(buildOption(points, ariaLabel), true);
+    chartInstance.setOption(buildOption(points, ariaLabel, mode), true);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');
   }
@@ -155,7 +167,7 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.points, { ariaLabel: last.ariaLabel });
+      if (last) renderLineChart(last.container, last.points, { ariaLabel: last.ariaLabel, mode: last.mode });
     });
   }
 }
