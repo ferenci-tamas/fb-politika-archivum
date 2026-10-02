@@ -1,21 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { niceMax } from '../src/ui/line-chart.js';
+import { toSeriesData } from '../src/ui/line-chart.js';
 
-test('niceMax rounds up to 1/2/5 × 10^k', () => {
-  assert.equal(niceMax(1), 1);
-  assert.equal(niceMax(2), 2);
-  assert.equal(niceMax(3), 5);
-  assert.equal(niceMax(5), 5);
-  assert.equal(niceMax(6), 10);
-  assert.equal(niceMax(50), 50);
-  assert.equal(niceMax(51), 100);
-  assert.equal(niceMax(150), 200);
-  assert.equal(niceMax(1000), 1000);
-  assert.equal(niceMax(1001), 2000);
+test('toSeriesData maps ym buckets to [utcMillis, count]', () => {
+  assert.deepEqual(
+    toSeriesData([
+      { ym: '2008-04', n: 3 },
+      { ym: '2015-12', n: 120 },
+      { ym: '2026-01', n: 0 }
+    ]),
+    [
+      [Date.UTC(2008, 3, 1), 3],
+      [Date.UTC(2015, 11, 1), 120],
+      [Date.UTC(2026, 0, 1), 0]
+    ]
+  );
 });
 
-test('niceMax handles zero and negatives defensively', () => {
-  assert.equal(niceMax(0), 1);
-  assert.equal(niceMax(-5), 1);
+test('toSeriesData returns an empty array for empty input', () => {
+  assert.deepEqual(toSeriesData([]), []);
 });
