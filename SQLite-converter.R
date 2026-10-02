@@ -51,14 +51,17 @@ SCHEMA_VERSION <- 2L
 
 # "format" of the parts manifest (manifest.json and latest.json, section 15).
 # It describes how the archive is split, not what is in it, so it is versioned
-# independently of SCHEMA_VERSION. 1: builtAt, schemaVersion (archive_meta
+# independently of SCHEMA_VERSION. 2: builtAt, schemaVersion (archive_meta
 # 'schema_version', so a client can reject an archive it cannot read before
 # fetching any of it), file, and size and md5 of the whole archive, pageSize,
-# partSize, and parts, an array of {name, offset, size, md5} for consecutive
+# partSize, monthBounds (an array of {ym, lo}: the smallest id in each year-month;
+# ids are assigned in (time, postId) order, so these partition the archive by month
+# exactly, letting the website bucket search hits per month without scanning the
+# time index), and parts, an array of {name, offset, size, md5} for consecutive
 # page-aligned byte ranges (each of partSize bytes except the last) that
 # concatenate to the archive; latest.json adds base, the build folder relative
-# to latest.json.
-MANIFEST_FORMAT <- 1L
+# to latest.json. A client treats monthBounds as optional (older format: scan).
+MANIFEST_FORMAT <- 2L
 
 # Diagnostics only. Use words that definitely occur in the data.
 TEST_SEARCH_TERM <- "az"
@@ -828,6 +831,14 @@ if (SPLIT_FOR_CDN) local({
 
   ro <- dbConnect(SQLite(), OUTPUT_FILE, flags = SQLITE_RO)
   built_at <- dbGetQuery(ro, "SELECT value FROM archive_meta WHERE key = 'built_at'")$value
+  # Smallest id per month, for the website's monthly histogram (Elemzés tab). ids
+  # are assigned in (time, postId) order, so these breakpoints partition the archive
+  # by month exactly; shipping them saves the browser a full scan of the time index
+  # on the first search (see src/lib/monthly.js). jsonlite serializes this
+  # data.frame as an array of {ym, lo} records.
+  month_bounds <- dbGetQuery(ro,
+    "SELECT strftime('%Y-%m', time, 'unixepoch') AS ym, MIN(id) AS lo
+     FROM posts GROUP BY ym ORDER BY lo")
   dbDisconnect(ro)
   version_dir <- file.path(CDN_PARTS_DIR, built_at)
   unlink(version_dir, recursive = TRUE)
@@ -882,6 +893,7 @@ if (SPLIT_FOR_CDN) local({
     md5 = unname(tools::md5sum(OUTPUT_FILE)),
     pageSize = page_size,
     partSize = CDN_PART_BYTES,
+    monthBounds = month_bounds,
     parts = parts
   )
   write_manifest <- function(x, path) jsonlite::write_json(x, path, auto_unbox = TRUE, pretty = TRUE, digits = NA)

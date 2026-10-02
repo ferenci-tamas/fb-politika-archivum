@@ -44,6 +44,9 @@ let fetchBlocks = null;
 let mrBytesTotal = 0;
 // Per-session cache of each month's smallest id, for the Elemzés histogram.
 let monthBounds = null;
+// Boundaries shipped in the manifest (MANIFEST_FORMAT >= 2), when present — lets us
+// skip the one-time time-index scan entirely.
+let manifestMonthBounds = null;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -91,6 +94,9 @@ async function init() {
     const manifest = await resp.json();
     if (manifest.schemaVersion !== 2) {
       throw new Error(`Nem támogatott adatbázis-sémaverzió: ${manifest.schemaVersion}.`);
+    }
+    if (Array.isArray(manifest.monthBounds)) {
+      manifestMonthBounds = manifest.monthBounds.map((m) => ({ ym: m.ym, lo: Number(m.lo) }));
     }
 
     const partMap = new PartMap(manifest);
@@ -214,12 +220,20 @@ async function handleQuery(msg) {
   }
 }
 
-// Warm the month-boundary cache (one covering-index scan) when the Elemzés tab is
-// opened, so the first search doesn't pay for it.
+// Month boundaries come from the manifest when present (MANIFEST_FORMAT >= 2);
+// otherwise fall back to a one-time covering-index scan of the time index. Cached
+// for the session either way.
+function ensureMonthBounds() {
+  if (!monthBounds) monthBounds = manifestMonthBounds || Q.monthBoundaries(db);
+  return monthBounds;
+}
+
+// Warm the month boundaries when the Elemzés tab is opened, so the first search
+// doesn't pay for the (fallback) scan.
 function handlePrepareMonthly() {
   if (!ready || monthBounds) return;
   try {
-    monthBounds = Q.monthBoundaries(db);
+    ensureMonthBounds();
   } catch {
     // Non-fatal: the next monthly request retries and surfaces any real error.
   }
@@ -236,7 +250,7 @@ function handleMonthly(msg) {
   try {
     vfs.clearLastError();
     const beforeBytes = vfs.getStats().bytesFetched;
-    if (!monthBounds) monthBounds = Q.monthBoundaries(db);
+    ensureMonthBounds();
     const match = msg.search ? buildFtsMatch(msg.search) : '';
     let points;
     let total = 0;

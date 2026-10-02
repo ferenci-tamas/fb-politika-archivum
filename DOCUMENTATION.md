@@ -172,6 +172,30 @@ contains two prefixes:
 /images/<filename>                        # post images
 ```
 
+### Manifest format
+
+`latest.json` and each build's `manifest.json` share one JSON object whose shape is
+versioned by `MANIFEST_FORMAT` (currently **2**). It is versioned independently of
+the SQLite `schema_version` because it describes how the archive is *split*, not
+what is in it. Clients treat unknown fields as optional.
+
+| Field | Meaning |
+|---|---|
+| `format` | Manifest format version (`2`). |
+| `schemaVersion` | The archive's `schema_version` (`2`), so a client can reject an archive it cannot read before fetching any data. |
+| `builtAt` | Build id; also the folder name under `/database/`. |
+| `file` | Archive filename (for tooling that reassembles the parts). |
+| `size`, `md5` | Byte size and MD5 of the whole archive. |
+| `pageSize` | SQLite page size (`16384`). |
+| `partSize` | Bytes per part (all but the last). |
+| `monthBounds` | *(format 2+)* Array of `{ ym, lo }` — the smallest `id` in each `YYYY-MM`. Because `id` is assigned in `(time, postId)` order, these partition the archive by month exactly, so the **Elemzés** tab buckets search hits per month without scanning the time index in the browser. |
+| `parts` | Array of `{ name, offset, size, md5 }` — consecutive, page-aligned byte ranges that concatenate to the archive. |
+| `base` | *(`latest.json` only)* The build folder relative to `latest.json` (trailing slash), so a client resolves part names against it. |
+
+`monthBounds` is **optional**: against an older format-1 manifest (no such field),
+the worker falls back to computing the boundaries with a one-time covering-index
+scan of `idx_posts_time` — correct, just slower on the first search of a session.
+
 The archive is split into page-aligned **parts** because Cloudflare only edge-caches
 objects ≤ 512 MB; each part is 384 MiB. `SQLite-converter.R` (section 15) writes the
 parts, `manifest.json`, and `latest.json`, and prints the exact `rclone` upload
