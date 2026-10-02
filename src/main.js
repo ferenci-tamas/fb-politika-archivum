@@ -592,7 +592,7 @@ function addPhraseRow(value = '') {
   const input = el('input', {
     type: 'search',
     class: 'analysis-phrase',
-    placeholder: 'Keresőkifejezés… (pl. kormány, infláció*)',
+    placeholder: 'Keresés a posztokban… (pl. kormány, „védett ár”, infláció*)',
     enterkeyhint: 'search',
     spellcheck: 'false',
     'aria-label': 'Keresőkifejezés'
