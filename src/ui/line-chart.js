@@ -67,6 +67,7 @@ function buildOption(series, ariaLabel, mode) {
     aria: { enabled: true, label: { enabled: true, description: ariaLabel } },
     color: COLORS,
     legend: {
+      show: series.length > 1, // a single curve needs no legend
       type: 'scroll',
       top: 6,
       data: series.map((s) => s.label),
@@ -74,7 +75,7 @@ function buildOption(series, ariaLabel, mode) {
       pageTextStyle: { color: muted },
       pageIconColor: muted
     },
-    grid: { top: 40, right: 20, bottom: 66, left: 56 },
+    grid: { top: series.length > 1 ? 40 : 18, right: 20, bottom: 66, left: 56 },
     tooltip: {
       trigger: 'axis',
       backgroundColor: surface,
@@ -146,6 +147,7 @@ function exportChartPng() {
   const text = cssVar('--text', '#1b1f24');
   const muted = cssVar('--muted', '#5b636e');
   const { series, mode } = last;
+  const multi = series.length > 1; // only reserve room for a legend when it is shown
   const subtitle = mode === 'ratio'
     ? '(arány az összes poszt számához viszonyítva)'
     : '(posztok száma havonta)';
@@ -156,7 +158,7 @@ function exportChartPng() {
 
   chartInstance.setOption({
     animation: false,
-    grid: { top: 96 },
+    grid: { top: multi ? 96 : 74 },
     legend: { top: 56 },
     title: {
       text: titleText,
@@ -192,7 +194,7 @@ function exportChartPng() {
   // Restore the on-screen chart: drop the title + attribution and the extra top room.
   chartInstance.setOption({
     animation: false,
-    grid: { top: 40 },
+    grid: { top: multi ? 40 : 18 },
     legend: { top: 6 },
     title: { show: false, text: '', subtext: '' },
     graphic: [{ id: 'attribution', $action: 'remove' }]
