@@ -102,3 +102,19 @@ test('narratives hash never carries authors', () => {
   assert.deepEqual(p.getAll('author'), []);
   assert.deepEqual(decodeHashToAnalysis('#' + hash).authorNames, []);
 });
+
+test('activity ratio deep-links (off by default, ratio=1 turns it on)', () => {
+  // Default off: a plain activity hash decodes to ratio false.
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&view=activity').ratio, false);
+  // On: emitted as ratio=1, and round-trips, but only alongside an author selection.
+  const on = encodeAnalysisToHash({ view: 'activity', ratio: true, authorNames: ['Áder János'] });
+  assert.equal(new URLSearchParams(on).get('ratio'), '1');
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&' + on).ratio, true);
+  // No author -> the ratio is meaningless, so it is omitted.
+  assert.equal(new URLSearchParams(encodeAnalysisToHash({ view: 'activity', ratio: true, authorNames: [] })).get('ratio'), null);
+});
+
+test('narratives ratio default is unaffected by the activity ratio semantics', () => {
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma').ratio, true); // still defaults on
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma&ratio=0').ratio, false);
+});

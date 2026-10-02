@@ -54,6 +54,7 @@ const els = {
   activityAuthorListbox: $('activity-author-listbox'),
   activityAuthorChips: $('activity-author-chips'),
   activityAuthorClear: $('activity-author-clear'),
+  activityRatio: $('activity-ratio'),
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
@@ -453,7 +454,7 @@ function updateHash() {
       view: elemzesView,
       phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
       accentSensitive: els.analysisAccent.checked,
-      ratio: els.analysisRatio.checked,
+      ratio: elemzesView === 'activity' ? els.activityRatio.checked : els.analysisRatio.checked,
       authorNames: activityAuthorIds.map((id) => authorIdToName.get(id)).filter(Boolean)
     });
     body = query ? `tab=elemzes&${query}` : 'tab=elemzes';
@@ -745,6 +746,14 @@ els.analysisRatio.addEventListener('change', () => {
   drawAnalysisChart();
   updateHash();
 });
+// Activity ratio toggle: re-render from the cached series (points already carry each
+// month's total), so no re-query, and keep the shareable URL in sync. Disabled until
+// an author is selected.
+els.activityRatio.disabled = true;
+els.activityRatio.addEventListener('change', () => {
+  drawActivityChart();
+  updateHash();
+});
 
 // --- Elemzés sub-views: activity chart + the view dropdown ------------------
 function setElemzesMenuOpen(open) {
@@ -797,19 +806,23 @@ function onActivityResult(msg) {
 
 function drawActivityChart() {
   if (!lastActivity) return;
+  // The ratio (an author's posts / all posts that month) only means something for a
+  // subset of authors; with none selected the single series *is* the total, so the
+  // toggle is disabled and the chart stays in count mode.
+  const hasAuthors = activityAuthorIds.length > 0;
+  els.activityRatio.disabled = !hasAuthors;
+  const ratio = hasAuthors && els.activityRatio.checked;
   const series = lastActivity.series.map((s) => ({ label: s.label, points: s.points }));
   const total = lastActivity.series.reduce((sum, s) => sum + s.total, 0);
-  els.activityStatus.textContent =
-    activityAuthorIds.length === 0
-      ? `${formatCount(total)} poszt havi eloszlása`
-      : `${series.length} szerző — összesen ${formatCount(total)} poszt`;
+  els.activityStatus.textContent = hasAuthors
+    ? `${series.length} szerző — összesen ${formatCount(total)} poszt`
+    : `${formatCount(total)} poszt havi eloszlása`;
   renderLineChart(els.activityChart, series, {
-    mode: 'count',
+    mode: ratio ? 'ratio' : 'count',
     title: 'Posztolási aktivitás időben',
-    ariaLabel:
-      activityAuthorIds.length === 0
-        ? 'A havonta közzétett összes poszt száma, 2008 és 2026 között'
-        : `Havi posztszám szerzőnként: ${series.map((s) => s.label).join(', ')}`
+    ariaLabel: hasAuthors
+      ? `Havi ${ratio ? 'posztarány' : 'posztszám'} szerzőnként: ${series.map((s) => s.label).join(', ')}`
+      : 'A havonta közzétett összes poszt száma, 2008 és 2026 között'
   });
 }
 
@@ -872,7 +885,14 @@ function applyHashAnalysisToState() {
     : { view: 'narratives', phrases: [], accentSensitive: false, ratio: true };
   elemzesView = a.view === 'activity' ? 'activity' : 'narratives';
   els.analysisAccent.checked = a.accentSensitive;
-  els.analysisRatio.checked = a.ratio;
+  // Route the decoded ratio to its sub-view; the other sub-view keeps its default.
+  if (a.view === 'activity') {
+    els.activityRatio.checked = a.ratio;
+    els.analysisRatio.checked = true; // narratives ratio defaults on
+  } else {
+    els.analysisRatio.checked = a.ratio;
+    els.activityRatio.checked = false; // activity ratio defaults off
+  }
   const phrases = a.phrases.slice(0, MAX_PHRASES);
   if (phrases.length === 0) addPhraseRow();
   else for (const phrase of phrases) addPhraseRow(phrase);

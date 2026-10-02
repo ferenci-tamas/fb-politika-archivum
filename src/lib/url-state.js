@@ -54,10 +54,11 @@ export function decodeHashToView(hash, opts) {
 
 // --- analysis (Elemzés) view -----------------------------------------------
 // Two sub-views live under `tab=elemzes`. The narratives sub-view carries one or
-// more search phrases (repeated `q`), the accent-sensitive flag and the ratio mode
-// (on by default). The activity sub-view (`view=activity`) carries its author
-// selection by NAME (repeated `author`, stable across rebuilds) — the caller maps
-// names <-> ids. `q` never collides with the Adatbázis search above.
+// more search phrases (repeated `q`), the accent-sensitive flag and its ratio mode
+// (on by default, so `ratio=0` turns it off). The activity sub-view
+// (`view=activity`) carries its author selection by NAME (repeated `author`, stable
+// across rebuilds — the caller maps names <-> ids) and its own ratio mode (off by
+// default, so `ratio=1` turns it on). `q` never collides with the Adatbázis search.
 
 /**
  * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames?:string[]}} v
@@ -65,13 +66,15 @@ export function decodeHashToView(hash, opts) {
  */
 export function encodeAnalysisToHash(v) {
   const p = new URLSearchParams();
-  // The activity sub-view carries only its author selection (by name); phrases,
-  // accent and ratio belong to the narratives sub-view and are irrelevant here.
+  // The activity sub-view carries its author selection (by name) and its ratio mode;
+  // phrases and the accent flag belong to the narratives sub-view, not here.
   if (v.view === 'activity') {
     p.set('view', 'activity');
     for (const name of v.authorNames || []) {
       if (name && name.trim() !== '') p.append('author', name);
     }
+    // Ratio is off by default and only meaningful alongside an author selection.
+    if (v.ratio && p.getAll('author').length > 0) p.set('ratio', '1');
     return p.toString();
   }
   // narratives (the default sub-view): one or more phrases plus the toggles.
@@ -90,11 +93,13 @@ export function encodeAnalysisToHash(v) {
  */
 export function decodeHashToAnalysis(hash) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  const view = p.get('view') === 'activity' ? 'activity' : 'narratives';
   return {
-    view: p.get('view') === 'activity' ? 'activity' : 'narratives',
+    view,
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
     accentSensitive: p.get('accent') === '1',
-    ratio: p.get('ratio') !== '0',
+    // Narratives ratio defaults on (`ratio=0` off); activity ratio defaults off (`ratio=1` on).
+    ratio: view === 'activity' ? p.get('ratio') === '1' : p.get('ratio') !== '0',
     authorNames: p.getAll('author').filter((n) => n && n.trim() !== '')
   };
 }
