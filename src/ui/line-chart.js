@@ -11,6 +11,13 @@ import { formatCount } from '../lib/format.js';
 // a gap) because their share of matches is too noisy to be meaningful.
 const MIN_TOTAL_FOR_RATIO = 100;
 
+// ECharts' default "save" icon, reused for our custom download button (which adds a
+// title + attribution to the exported image only — see exportChartPng).
+const SAVE_ICON = 'path://M4.7,22.9L29.3,45.5L54.7,23.4M4.6,43.6L4.6,58L53.8,58L53.8,43.6M29.2,45.1L29.2,0';
+
+let chartInstance = null;
+let last = null; // { container, points, ariaLabel, mode, term } — for re-theme / export
+
 /**
  * Convert monthly buckets to ECharts data items. Pure (no DOM/ECharts), so it
  * stays unit-testable in Node. Each item keeps n and total so the tooltip can show
@@ -41,7 +48,7 @@ function cssVar(name, fallback) {
   return v || fallback;
 }
 
-function buildOption(points, ariaLabel, mode) {
+function buildOption(points, ariaLabel, mode, term) {
   const accent = cssVar('--accent', '#1b5fb0');
   const muted = cssVar('--muted', '#5b636e');
   const border = cssVar('--border', '#d4d8de');
@@ -74,12 +81,11 @@ function buildOption(points, ariaLabel, mode) {
     },
     toolbox: {
       feature: {
-        saveAsImage: {
-          type: 'png',
-          name: 'havi-grafikon',
-          pixelRatio: 2,
-          backgroundColor: surface,
-          title: 'Mentés PNG-ként'
+        myDownload: {
+          show: true,
+          title: 'Mentés PNG-ként',
+          icon: SAVE_ICON,
+          onclick: () => exportChartPng({ mode, term })
         }
       },
       right: 8,
@@ -116,8 +122,65 @@ function buildOption(points, ariaLabel, mode) {
   };
 }
 
-let chartInstance = null;
-let last = null; // { container, points, ariaLabel, mode } — for re-theming on scheme change
+// Export the chart as a PNG with a title + attribution that appear ONLY in the
+// downloaded image. They are merged in, the data URL is captured, then they are
+// removed again — all synchronously, so the on-screen chart never shows them and
+// the current zoom is preserved. The toolbar and zoom slider are excluded from the
+// image (they are interactive controls, not part of the figure).
+function exportChartPng({ mode, term }) {
+  if (!chartInstance) return;
+  const surface = cssVar('--surface', '#ffffff');
+  const text = cssVar('--text', '#1b1f24');
+  const muted = cssVar('--muted', '#5b636e');
+  const subtitle = mode === 'ratio'
+    ? '(arány az összes poszt számához viszonyítva)'
+    : '(posztok száma havonta)';
+
+  chartInstance.setOption({
+    animation: false,
+    grid: { top: 74 },
+    title: {
+      text: `A(z) „${term}” keresőkifejezés előfordulása az időben`,
+      subtext: subtitle,
+      left: 'center',
+      top: 10,
+      textStyle: { color: text, fontSize: 15, fontWeight: 600 },
+      subtextStyle: { color: muted, fontSize: 12 }
+    },
+    graphic: [
+      {
+        id: 'attribution',
+        type: 'text',
+        right: 12,
+        bottom: 10,
+        z: 100,
+        style: { text: 'Ferenci Tamás (www.medstat.hu)', fill: muted, fontSize: 10, textAlign: 'right' }
+      }
+    ]
+  });
+
+  const url = chartInstance.getDataURL({
+    type: 'png',
+    pixelRatio: 2,
+    backgroundColor: surface,
+    excludeComponents: ['toolbox', 'dataZoom']
+  });
+
+  // Restore the on-screen chart: drop the title + attribution and the extra top room.
+  chartInstance.setOption({
+    animation: false,
+    grid: { top: 18 },
+    title: { show: false, text: '', subtext: '' },
+    graphic: [{ id: 'attribution', $action: 'remove' }]
+  });
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'havi-grafikon.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 function disposeChart() {
   if (chartInstance) {
@@ -144,9 +207,9 @@ export function preloadChart() {
 /**
  * Render the monthly chart into `container`. Async because ECharts is loaded on
  * demand; the caller fires it and does not await.
- * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
+ * @param {{ariaLabel?:string, mode?:'count'|'ratio', term?:string}} [opts]
  */
-export async function renderLineChart(container, points, { ariaLabel, mode = 'count' } = {}) {
+export async function renderLineChart(container, points, { ariaLabel, mode = 'count', term = '' } = {}) {
   if (!container) return;
   disposeChart();
   if (!points || points.length === 0) {
@@ -154,7 +217,7 @@ export async function renderLineChart(container, points, { ariaLabel, mode = 'co
     clear(container);
     return;
   }
-  last = { container, points, ariaLabel, mode };
+  last = { container, points, ariaLabel, mode, term };
 
   let echarts;
   try {
@@ -175,7 +238,7 @@ export async function renderLineChart(container, points, { ariaLabel, mode = 'co
     if (ariaLabel) host.setAttribute('aria-label', ariaLabel);
     container.append(host);
     chartInstance = echarts.init(host, null, { renderer: 'canvas' });
-    chartInstance.setOption(buildOption(points, ariaLabel, mode), true);
+    chartInstance.setOption(buildOption(points, ariaLabel, mode, term), true);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');
   }
@@ -194,7 +257,9 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.points, { ariaLabel: last.ariaLabel, mode: last.mode });
+      if (last) {
+        renderLineChart(last.container, last.points, { ariaLabel: last.ariaLabel, mode: last.mode, term: last.term });
+      }
     });
   }
 }

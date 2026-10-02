@@ -597,6 +597,7 @@ function drawAnalysisChart() {
   const term = els.analysisSearch.value.trim();
   renderLineChart(els.analysisChart, lastMonthly.points, {
     mode: ratio ? 'ratio' : 'count',
+    term,
     ariaLabel: ratio
       ? `„${term}”: havi találatarány a hónap összes posztjának százalékában`
       : `„${term}”: havi találatszám, összesen ${formatCount(lastMonthly.total)} poszt`
