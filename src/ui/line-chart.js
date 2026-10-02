@@ -7,6 +7,10 @@
 import { clear } from './dom.js';
 import { formatCount } from '../lib/format.js';
 
+// In ratio mode, months with fewer than this many posts are suppressed (plotted as
+// a gap) because their share of matches is too noisy to be meaningful.
+const MIN_TOTAL_FOR_RATIO = 100;
+
 /**
  * Convert monthly buckets to ECharts data items. Pure (no DOM/ECharts), so it
  * stays unit-testable in Node. Each item keeps n and total so the tooltip can show
@@ -19,7 +23,13 @@ export function toSeriesData(points, mode = 'count') {
   return points.map((p) => {
     const ts = Date.UTC(Number(p.ym.slice(0, 4)), Number(p.ym.slice(5, 7)) - 1, 1);
     const total = Number(p.total) || 0;
-    const y = mode === 'ratio' ? (total > 0 ? (p.n / total) * 100 : 0) : p.n;
+    let y;
+    if (mode === 'ratio') {
+      // Suppress sparse months (gap in the line) rather than plot a noisy ratio.
+      y = total >= MIN_TOTAL_FOR_RATIO ? (p.n / total) * 100 : null;
+    } else {
+      y = p.n;
+    }
     return { value: [ts, y], n: p.n, total };
   });
 }
@@ -48,11 +58,15 @@ function buildOption(points, ariaLabel, mode) {
       textStyle: { color: text },
       formatter: (params) => {
         const p = Array.isArray(params) ? params[0] : params;
+        if (!p || !p.value) return '';
         const d = new Date(p.value[0]);
         const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
         const { n, total } = p.data;
         if (ratio) {
-          const pct = total > 0 ? (n / total) * 100 : 0;
+          if (total < MIN_TOTAL_FOR_RATIO) {
+            return `${ym}<br/>— <small>(túl kevés poszt: ${formatCount(total)})</small>`;
+          }
+          const pct = (n / total) * 100;
           return `${ym}<br/><strong>${pct.toFixed(2)}%</strong> (${formatCount(n)} / ${formatCount(total)})`;
         }
         return `${ym}<br/><strong>${formatCount(n)}</strong> találat`;
@@ -82,6 +96,7 @@ function buildOption(points, ariaLabel, mode) {
         name: ratio ? 'Havi arány' : 'Havi találatok',
         data: toSeriesData(points, mode),
         showSymbol: false,
+        connectNulls: false,
         lineStyle: { color: accent, width: 2 },
         itemStyle: { color: accent }
       }
