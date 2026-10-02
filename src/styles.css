@@ -719,6 +719,7 @@ button:disabled {
   border-color: var(--bad);
 }
 .analysis-actions {
+  position: relative; /* anchor for the absolutely-positioned .search-tips-body */
   display: flex;
   align-items: center;
   flex-wrap: wrap;
