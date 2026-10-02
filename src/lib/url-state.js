@@ -51,3 +51,36 @@ export function decodeHashToView(hash, opts) {
     pageSize: opts.pageSizes.includes(size) ? size : opts.defaultPageSize
   };
 }
+
+// --- analysis (Elemzés) view -----------------------------------------------
+// One or more search phrases (repeated `q`), the accent-sensitive flag, and the
+// ratio mode (on by default). Lives under `tab=elemzes`, so `q` never collides
+// with the Adatbázis search above.
+
+/**
+ * @param {{phrases:string[], accentSensitive:boolean, ratio:boolean}} view
+ * @returns {string} the hash body (without a leading '#'); '' when there are no phrases
+ */
+export function encodeAnalysisToHash(view) {
+  const p = new URLSearchParams();
+  for (const phrase of view.phrases || []) {
+    if (phrase && phrase.trim() !== '') p.append('q', phrase.trim());
+  }
+  if (p.getAll('q').length === 0) return '';
+  if (view.accentSensitive) p.set('accent', '1');
+  if (view.ratio === false) p.set('ratio', '0'); // ratio defaults to on
+  return p.toString();
+}
+
+/**
+ * @param {string} hash the location hash (leading '#' optional)
+ * @returns {{phrases:string[], accentSensitive:boolean, ratio:boolean}}
+ */
+export function decodeHashToAnalysis(hash) {
+  const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  return {
+    phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
+    accentSensitive: p.get('accent') === '1',
+    ratio: p.get('ratio') !== '0'
+  };
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeViewToHash, decodeHashToView } from '../src/lib/url-state.js';
+import { encodeViewToHash, decodeHashToView, encodeAnalysisToHash, decodeHashToAnalysis } from '../src/lib/url-state.js';
 
 const ENC = { defaultSort: 'date_desc', defaultPageSize: 50 };
 const DEC = { validSorts: ['date_desc', 'date_asc', 'author'], pageSizes: [50, 100, 250], defaultSort: 'date_desc', defaultPageSize: 50 };
@@ -38,4 +38,23 @@ test('decode tolerates a leading # and empty input', () => {
   assert.deepEqual(decodeHashToView('', DEC).authorNames, []);
   assert.equal(decodeHashToView('#q=hello&accent=1', DEC).search, 'hello');
   assert.equal(decodeHashToView('#q=hello&accent=1', DEC).accentSensitive, true);
+});
+
+test('analysis hash round-trips phrases, accent and ratio', () => {
+  const back = decodeHashToAnalysis(encodeAnalysisToHash({ phrases: ['infláció', 'orbán viktor'], accentSensitive: true, ratio: false }));
+  assert.deepEqual(back.phrases, ['infláció', 'orbán viktor']);
+  assert.equal(back.accentSensitive, true);
+  assert.equal(back.ratio, false);
+});
+
+test('analysis hash omits defaults and empty phrases', () => {
+  assert.equal(encodeAnalysisToHash({ phrases: ['x', '  ', ''], accentSensitive: false, ratio: true }), 'q=x');
+  assert.equal(encodeAnalysisToHash({ phrases: [], accentSensitive: true, ratio: false }), '');
+});
+
+test('analysis decode defaults ratio to on and tolerates a leading #', () => {
+  const a = decodeHashToAnalysis('#tab=elemzes&q=alma');
+  assert.deepEqual(a.phrases, ['alma']);
+  assert.equal(a.ratio, true);
+  assert.equal(a.accentSensitive, false);
 });

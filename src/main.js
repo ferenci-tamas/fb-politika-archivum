@@ -15,7 +15,7 @@ import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
 import { renderLineChart, preloadChart } from './ui/line-chart.js';
 import { el } from './ui/dom.js';
-import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
+import { encodeViewToHash, decodeHashToView, encodeAnalysisToHash, decodeHashToAnalysis } from './lib/url-state.js';
 import { marked } from 'marked';
 import landingMarkdown from '../landing.md?raw';
 
@@ -417,7 +417,12 @@ function updateHash() {
     );
     body = query ? `tab=adatbazis&${query}` : 'tab=adatbazis';
   } else if (activeTab === 'elemzes') {
-    body = 'tab=elemzes';
+    const query = encodeAnalysisToHash({
+      phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
+      accentSensitive: els.analysisAccent.checked,
+      ratio: els.analysisRatio.checked
+    });
+    body = query ? `tab=elemzes&${query}` : 'tab=elemzes';
   }
   history.replaceState(null, '', body ? `#${body}` : location.pathname + location.search);
 }
@@ -597,6 +602,7 @@ function prepareAnalysis() {
 }
 
 function runAnalysis() {
+  updateHash(); // keep the shareable URL in sync with the phrases + toggles
   const searches = collectPhrases();
   if (searches.length === 0) {
     analysisReqId += 1; // invalidate any in-flight response
@@ -695,9 +701,26 @@ els.analysisAdd.addEventListener('click', () => {
   if (input) input.focus();
 });
 els.analysisAccent.addEventListener('change', runAnalysis);
-els.analysisRatio.addEventListener('change', drawAnalysisChart);
+els.analysisRatio.addEventListener('change', () => {
+  drawAnalysisChart();
+  updateHash();
+});
 
-addPhraseRow(); // start with one empty phrase row
+// Restore phrases + toggles from the hash when it is an Elemzés deep link; otherwise
+// start with a single empty row. Seeds the rows at load and on Back/Forward.
+function applyHashAnalysisToState() {
+  els.analysisPhrases.replaceChildren();
+  const onElemzes = new URLSearchParams(location.hash.replace(/^#/, '')).get('tab') === 'elemzes';
+  const a = onElemzes ? decodeHashToAnalysis(location.hash) : { phrases: [], accentSensitive: false, ratio: true };
+  els.analysisAccent.checked = a.accentSensitive;
+  els.analysisRatio.checked = a.ratio;
+  const phrases = a.phrases.slice(0, MAX_PHRASES);
+  if (phrases.length === 0) addPhraseRow();
+  else for (const phrase of phrases) addPhraseRow(phrase);
+  updateRemoveButtons();
+}
+
+applyHashAnalysisToState(); // seed the phrase rows (restoring an Elemzés deep link)
 
 // Expand / collapse long post text (event delegation on the table body).
 els.body.addEventListener('click', (e) => {
@@ -783,6 +806,7 @@ window.addEventListener('hashchange', () => {
     applyHashFiltersToState();
     firstQueryDone = true;
   }
+  if (tab === 'elemzes') applyHashAnalysisToState();
   setActiveTab(tab, { updateUrl: false });
   if (tab === 'adatbazis' && state.ready) send('first');
 });
