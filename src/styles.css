@@ -684,6 +684,11 @@ button:disabled {
 }
 
 /* Analysis (Elemzés) tab — monthly line chart (ECharts, SVG renderer) -------- */
+/* The Elemzés panel scrolls as one piece; a sticky search panel would slide over
+   the top of the chart, so keep it in normal flow (unlike the Adatbázis controls). */
+#analysis-controls {
+  position: static;
+}
 .analysis-phrases {
   display: flex;
   flex-direction: column;
