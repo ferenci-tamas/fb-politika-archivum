@@ -6,7 +6,8 @@ import {
   dateInputToUnixStart,
   dateInputToUnixEndExclusive,
   unixToDateInput,
-  formatCount
+  formatCount,
+  hungarianArticle
 } from '../src/lib/format.js';
 
 test('formatHuDateTime formats UTC as "YYYY. MM. DD. HH:MM"', () => {
@@ -42,4 +43,24 @@ test('formatCount groups thousands with a non-breaking space', () => {
   assert.equal(formatCount(654375), '654\u00A0375');
   assert.equal(formatCount(42), '42');
   assert.equal(formatCount(1000000), '1\u00A0000\u00A0000');
+});
+
+test('hungarianArticle chooses Az before vowels and A before consonants', () => {
+  assert.equal(hungarianArticle('infláció'), 'Az');
+  assert.equal(hungarianArticle('kormány'), 'A');
+  assert.equal(hungarianArticle('Orbán'), 'Az'); // case-insensitive
+  assert.equal(hungarianArticle('őrség'), 'Az'); // ő is a vowel
+  assert.equal(hungarianArticle('ügyek'), 'Az'); // ü is a vowel
+});
+
+test('hungarianArticle uses the first actual letter, skipping operators/quotes', () => {
+  assert.equal(hungarianArticle('"orbán viktor"'), 'Az');
+  assert.equal(hungarianArticle('-brüsszel'), 'A');
+  assert.equal(hungarianArticle('  ukrajna'), 'Az');
+  assert.equal(hungarianArticle('123 alma'), 'Az');
+});
+
+test('hungarianArticle falls back to A when there is no letter', () => {
+  assert.equal(hungarianArticle('123'), 'A');
+  assert.equal(hungarianArticle(''), 'A');
 });

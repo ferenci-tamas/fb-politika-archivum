@@ -63,3 +63,17 @@ export function formatCount(n) {
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
 }
+
+/**
+ * The Hungarian definite article for a word: "Az" before a vowel, "A" before a
+ * consonant, decided by the first actual letter (leading quotes/operators/spaces
+ * are skipped). This covers ordinary search terms; the phonetic exceptions —
+ * letter-by-letter acronyms ("az FBI") and digits ("a 2" vs "az 5") — are not
+ * handled, as they practically never occur as search phrases.
+ * @param {string} term
+ * @returns {'A'|'Az'}
+ */
+export function hungarianArticle(term) {
+  const first = (String(term).match(/\p{L}/u) || [''])[0].toLowerCase();
+  return first !== '' && 'aáeéiíoóöőuúüű'.includes(first) ? 'Az' : 'A';
+}

@@ -5,7 +5,7 @@
 // (toSeriesData) is pure and unit-tested; rendering is verified in-browser.
 
 import { clear } from './dom.js';
-import { formatCount } from '../lib/format.js';
+import { formatCount, hungarianArticle } from '../lib/format.js';
 
 // In ratio mode, months with fewer than this many posts are suppressed (plotted as
 // a gap) because their share of matches is too noisy to be meaningful.
@@ -140,7 +140,7 @@ function exportChartPng({ mode, term }) {
     animation: false,
     grid: { top: 74 },
     title: {
-      text: `A(z) ${term} keresőkifejezés előfordulása az időben`,
+      text: `${hungarianArticle(term)} ${term} keresőkifejezés előfordulása az időben`,
       subtext: subtitle,
       left: 'center',
       top: 10,
