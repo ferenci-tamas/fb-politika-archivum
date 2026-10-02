@@ -1,4 +1,4 @@
-// Monthly line chart for the Elemzés tab, rendered with ECharts (SVG renderer)
+// Monthly line chart for the Elemzés tab, rendered with ECharts (canvas renderer)
 // loaded lazily via a dynamic import — ECharts only downloads when a chart is
 // actually shown. Two modes: absolute monthly counts ('count') and each month's
 // share of its posts ('ratio', shown as a percentage). The data shaping
@@ -72,7 +72,19 @@ function buildOption(points, ariaLabel, mode) {
         return `${ym}<br/><strong>${formatCount(n)}</strong> találat`;
       }
     },
-    toolbox: { feature: { saveAsImage: { title: 'Mentés képként' } }, right: 8, top: 4 },
+    toolbox: {
+      feature: {
+        saveAsImage: {
+          type: 'png',
+          name: 'havi-grafikon',
+          pixelRatio: 2,
+          backgroundColor: surface,
+          title: 'Mentés PNG-ként'
+        }
+      },
+      right: 8,
+      top: 4
+    },
     dataZoom: [
       { type: 'inside' },
       { type: 'slider', height: 20, bottom: 16 }
@@ -162,7 +174,7 @@ export async function renderLineChart(container, points, { ariaLabel, mode = 'co
     host.setAttribute('role', 'img');
     if (ariaLabel) host.setAttribute('aria-label', ariaLabel);
     container.append(host);
-    chartInstance = echarts.init(host, null, { renderer: 'svg' });
+    chartInstance = echarts.init(host, null, { renderer: 'canvas' });
     chartInstance.setOption(buildOption(points, ariaLabel, mode), true);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');
