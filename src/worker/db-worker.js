@@ -254,23 +254,25 @@ function handleMonthly(msg) {
     // Per-month totals come free from the boundaries (ids are contiguous in time
     // order), so the ratio view needs no extra query — see src/lib/monthly.js.
     const totals = monthTotals(monthBounds, meta.max_id);
-    const match = msg.search ? buildFtsMatch(msg.search) : '';
-    let points;
-    let total = 0;
-    if (match === '') {
-      points = monthBounds.map((m, i) => ({ ym: m.ym, n: 0, total: totals[i] }));
-    } else {
-      const ftsTable = msg.accentSensitive ? FTS_TABLE.sensitive : FTS_TABLE.folded;
+    const ftsTable = msg.accentSensitive ? FTS_TABLE.sensitive : FTS_TABLE.folded;
+    const searches = Array.isArray(msg.searches) ? msg.searches : [];
+
+    // One series per phrase. Boundaries + totals are computed once above; each
+    // phrase is then just a compact FTS doclist scan plus in-memory bucketing.
+    const series = searches.map(({ id, phrase }) => {
+      const match = phrase ? buildFtsMatch(phrase) : '';
+      if (match === '') {
+        return { id, phrase, matchEmpty: true, matchCount: 0, points: [] };
+      }
       const ids = Q.matchRowidsAsc(db, ftsTable, match);
-      points = bucketByMonth(ids, monthBounds).map((p, i) => ({ ym: p.ym, n: p.n, total: totals[i] }));
-      total = ids.length;
-    }
+      const points = bucketByMonth(ids, monthBounds).map((p, i) => ({ ym: p.ym, n: p.n, total: totals[i] }));
+      return { id, phrase, matchEmpty: false, matchCount: ids.length, points };
+    });
+
     self.postMessage({
       type: 'monthly-result',
       reqId: msg.reqId,
-      points,
-      total,
-      matchEmpty: match === '',
+      series,
       fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
     });
   } catch (err) {

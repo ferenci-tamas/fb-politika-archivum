@@ -201,33 +201,21 @@
 
       <section id="panel-elemzes" class="panel" role="tabpanel" aria-labelledby="tab-elemzes" tabindex="0" hidden>
         <form id="analysis-controls" class="controls" role="search" aria-label="Elemzés – keresés" autocomplete="off">
-          <div class="search-row">
-            <div class="search-field">
-              <label class="visually-hidden" for="analysis-search">Keresés a posztok szövegében</label>
-              <input
-                type="search"
-                id="analysis-search"
-                name="analysis-search"
-                placeholder="Keresés a posztokban… a havi találatszám grafikonjához"
-                enterkeyhint="search"
-                spellcheck="false"
-              />
-              <button type="button" id="analysis-search-clear" class="search-clear" hidden aria-label="Keresés törlése">
-                ×
-              </button>
-            </div>
+          <div id="analysis-phrases" class="analysis-phrases"></div>
+          <div class="analysis-actions">
+            <button type="button" id="analysis-add" class="secondary">+ Újabb keresőkifejezés</button>
             <label class="accent-toggle">
               <input type="checkbox" id="analysis-accent" />
               <span>Ékezetérzékeny</span>
             </label>
+            <label class="accent-toggle">
+              <input type="checkbox" id="analysis-ratio" checked />
+              <span>Az összes poszt számához viszonyítva</span>
+            </label>
           </div>
-          <label class="accent-toggle analysis-ratio-toggle">
-            <input type="checkbox" id="analysis-ratio" checked />
-            <span>Az összes poszt számához viszonyítva</span>
-          </label>
           <p class="analysis-hint">
-            Add meg a keresőkifejezést (ugyanaz a szintaxis, mint az Adatbázisban); a grafikon a találatok havi számát,
-            bejelölve pedig a havi összes poszthoz viszonyított arányát mutatja.
+            Adj meg egy vagy több keresőkifejezést (ugyanaz a szintaxis, mint az Adatbázisban); a grafikon mindegyik
+            havi találatszámát — bejelölve a havi összes poszthoz viszonyított arányát — külön színnel mutatja.
           </p>
         </form>
 

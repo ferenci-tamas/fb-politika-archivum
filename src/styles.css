@@ -684,8 +684,40 @@ button:disabled {
 }
 
 /* Analysis (Elemzés) tab — monthly line chart (ECharts, SVG renderer) -------- */
-.analysis-ratio-toggle {
-  display: inline-flex;
+.analysis-phrases {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.analysis-phrase-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.analysis-phrase-row .search-field {
+  flex: 1 1 auto;
+}
+.analysis-phrase-remove {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.analysis-phrase-remove:hover {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.analysis-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
   margin-top: 10px;
 }
 .analysis-hint {

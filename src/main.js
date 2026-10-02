@@ -14,6 +14,7 @@ import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
 import { renderLineChart, preloadChart } from './ui/line-chart.js';
+import { el } from './ui/dom.js';
 import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
 import { marked } from 'marked';
 import landingMarkdown from '../landing.md?raw';
@@ -37,8 +38,8 @@ const els = {
   panelAdatbazis: $('panel-adatbazis'),
   panelElemzes: $('panel-elemzes'),
   landing: $('landing'),
-  analysisSearch: $('analysis-search'),
-  analysisSearchClear: $('analysis-search-clear'),
+  analysisPhrases: $('analysis-phrases'),
+  analysisAdd: $('analysis-add'),
   analysisAccent: $('analysis-accent'),
   analysisRatio: $('analysis-ratio'),
   analysisStatus: $('analysis-status'),
@@ -518,12 +519,71 @@ els.errorRetry.addEventListener('click', () => {
 els.reload.addEventListener('click', () => window.location.reload());
 
 // --- analysis (Elemzés tab) -------------------------------------------------
-// Shares the worker/DB with Adatbázis. A search posts a 'monthly' request; the
-// worker returns per-month counts, drawn as a line chart. analysisReqId drops
-// stale responses, exactly like the feed's reqId.
+// Shares the worker/DB with Adatbázis. One or more phrase inputs each become a
+// line series; a search posts a single 'monthly' request for all phrases and the
+// worker returns per-phrase monthly counts. analysisReqId drops stale replies.
 let analysisReqId = 0;
 let analysisPrepared = false;
 let analysisTimer = null;
+let nextPhraseId = 0;
+// At most this many phrases/series — matches the chart colour palette (line-chart.js).
+const MAX_PHRASES = 8;
+let lastMonthly = null; // most recent { series }; re-rendered on ratio toggle, no re-query
+
+function addPhraseRow(value = '') {
+  if (els.analysisPhrases.querySelectorAll('.analysis-phrase-row').length >= MAX_PHRASES) return null;
+  const id = ++nextPhraseId;
+  const input = el('input', {
+    type: 'search',
+    class: 'analysis-phrase',
+    placeholder: 'Keresőkifejezés… (pl. kormány, infláció*)',
+    enterkeyhint: 'search',
+    spellcheck: 'false',
+    'aria-label': 'Keresőkifejezés'
+  });
+  if (value) input.value = value;
+  const clearBtn = el(
+    'button',
+    { type: 'button', class: 'search-clear analysis-phrase-clear', 'aria-label': 'Keresőkifejezés törlése' },
+    '×'
+  );
+  clearBtn.hidden = value.trim() === '';
+  const removeBtn = el(
+    'button',
+    { type: 'button', class: 'analysis-phrase-remove', 'aria-label': 'Keresőkifejezés eltávolítása', title: 'Keresőkifejezés eltávolítása' },
+    '−'
+  );
+  const row = el(
+    'div',
+    { class: 'analysis-phrase-row', dataset: { id: String(id) } },
+    el('div', { class: 'search-field' }, input, clearBtn),
+    removeBtn
+  );
+  els.analysisPhrases.append(row);
+  updateRemoveButtons();
+  return input;
+}
+
+// Hide the remove control when a single row is left (there must always be one), and
+// disable the "add" button once the phrase cap is reached.
+function updateRemoveButtons() {
+  const rows = els.analysisPhrases.querySelectorAll('.analysis-phrase-row');
+  for (const r of rows) r.querySelector('.analysis-phrase-remove').hidden = rows.length <= 1;
+  els.analysisAdd.disabled = rows.length >= MAX_PHRASES;
+}
+
+// Non-empty, de-duplicated phrases with their row id.
+function collectPhrases() {
+  const seen = new Set();
+  const out = [];
+  for (const input of els.analysisPhrases.querySelectorAll('.analysis-phrase')) {
+    const phrase = input.value.trim();
+    if (phrase === '' || seen.has(phrase)) continue;
+    seen.add(phrase);
+    out.push({ id: input.closest('.analysis-phrase-row').dataset.id, phrase });
+  }
+  return out;
+}
 
 // Shown the Elemzés tab (and re-invoked from onReady if the DB was still loading):
 // warm the month boundaries, then run whatever the user has already typed.
@@ -533,13 +593,12 @@ function prepareAnalysis() {
     analysisPrepared = true;
     worker.postMessage({ type: 'prepare-monthly' });
   }
-  if (els.analysisSearch.value.trim() !== '') runAnalysis();
+  if (collectPhrases().length > 0) runAnalysis();
 }
 
 function runAnalysis() {
-  const term = els.analysisSearch.value;
-  els.analysisSearchClear.hidden = term.trim() === '';
-  if (term.trim() === '') {
+  const searches = collectPhrases();
+  if (searches.length === 0) {
     analysisReqId += 1; // invalidate any in-flight response
     lastMonthly = null;
     els.analysisStatus.textContent = '';
@@ -552,40 +611,31 @@ function runAnalysis() {
   }
   analysisReqId += 1;
   els.analysisStatus.textContent = 'Számítás…';
-  // Spinner (decorative; the status text above announces for screen readers),
-  // matching the Adatbázis results-loading indicator.
-  const loading = document.createElement('div');
-  loading.className = 'chart-loading';
-  loading.setAttribute('aria-hidden', 'true');
-  const spinner = document.createElement('div');
-  spinner.className = 'spinner';
-  loading.append(spinner);
+  // Spinner (decorative; the status text above announces for screen readers).
+  const loading = el('div', { class: 'chart-loading', 'aria-hidden': 'true' }, el('div', { class: 'spinner' }));
   els.analysisChart.replaceChildren(loading);
   worker.postMessage({
     type: 'monthly',
     reqId: analysisReqId,
-    search: term,
+    searches,
     accentSensitive: els.analysisAccent.checked
   });
 }
 
-let lastMonthly = null; // most recent { points, total }; re-rendered on toggle, no re-query
-
 function onMonthlyResult(msg) {
-  if (msg.matchEmpty) {
-    els.analysisStatus.textContent = 'Adj meg egy keresőkifejezést.';
+  const series = (msg.series || []).filter((s) => !s.matchEmpty);
+  if (series.length === 0) {
+    els.analysisStatus.textContent = 'Adj meg legalább egy keresőkifejezést.';
     lastMonthly = null;
     els.analysisChart.replaceChildren();
     return;
   }
-  if (msg.total === 0) {
-    els.analysisStatus.textContent = 'Nincs a keresésnek megfelelő poszt.';
-    lastMonthly = null;
-    els.analysisChart.replaceChildren();
-    return;
-  }
-  lastMonthly = { points: msg.points, total: msg.total };
-  els.analysisStatus.textContent = `${formatCount(msg.total)} találat havi eloszlása`;
+  lastMonthly = { series };
+  const totalMatches = series.reduce((sum, s) => sum + s.matchCount, 0);
+  els.analysisStatus.textContent =
+    series.length === 1
+      ? `${formatCount(series[0].matchCount)} találat havi eloszlása`
+      : `${series.length} keresőkifejezés összehasonlítása — összesen ${formatCount(totalMatches)} találat`;
   drawAnalysisChart();
 }
 
@@ -594,13 +644,11 @@ function onMonthlyResult(msg) {
 function drawAnalysisChart() {
   if (!lastMonthly) return;
   const ratio = els.analysisRatio.checked;
-  const term = els.analysisSearch.value.trim();
-  renderLineChart(els.analysisChart, lastMonthly.points, {
+  const series = lastMonthly.series.map((s) => ({ label: s.phrase, points: s.points }));
+  const phrases = series.map((s) => s.label).join(', ');
+  renderLineChart(els.analysisChart, series, {
     mode: ratio ? 'ratio' : 'count',
-    term,
-    ariaLabel: ratio
-      ? `„${term}”: havi találatarány a hónap összes posztjának százalékában`
-      : `„${term}”: havi találatszám, összesen ${formatCount(lastMonthly.total)} poszt`
+    ariaLabel: `Havi ${ratio ? 'találatarány' : 'találatszám'} keresőkifejezésenként: ${phrases}`
   });
 }
 
@@ -609,26 +657,47 @@ function onMonthlyError(msg) {
   els.analysisChart.replaceChildren();
 }
 
-els.analysisSearch.addEventListener('input', () => {
-  els.analysisSearchClear.hidden = els.analysisSearch.value.trim() === '';
+// Phrase rows: debounced input, per-row clear/remove, Enter to run immediately.
+els.analysisPhrases.addEventListener('input', (e) => {
+  const input = e.target.closest('.analysis-phrase');
+  if (!input) return;
+  const clearBtn = input.parentElement.querySelector('.analysis-phrase-clear');
+  if (clearBtn) clearBtn.hidden = input.value.trim() === '';
   clearTimeout(analysisTimer);
   analysisTimer = setTimeout(runAnalysis, 300);
 });
-els.analysisSearch.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
+els.analysisPhrases.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.closest('.analysis-phrase')) {
     e.preventDefault();
     clearTimeout(analysisTimer);
     runAnalysis();
   }
 });
-els.analysisSearchClear.addEventListener('click', () => {
-  els.analysisSearch.value = '';
-  els.analysisSearchClear.hidden = true;
-  runAnalysis();
-  els.analysisSearch.focus();
+els.analysisPhrases.addEventListener('click', (e) => {
+  const clearBtn = e.target.closest('.analysis-phrase-clear');
+  if (clearBtn) {
+    const input = clearBtn.parentElement.querySelector('.analysis-phrase');
+    input.value = '';
+    clearBtn.hidden = true;
+    input.focus();
+    runAnalysis();
+    return;
+  }
+  const removeBtn = e.target.closest('.analysis-phrase-remove');
+  if (removeBtn) {
+    removeBtn.closest('.analysis-phrase-row').remove();
+    updateRemoveButtons();
+    runAnalysis();
+  }
+});
+els.analysisAdd.addEventListener('click', () => {
+  const input = addPhraseRow();
+  if (input) input.focus();
 });
 els.analysisAccent.addEventListener('change', runAnalysis);
 els.analysisRatio.addEventListener('change', drawAnalysisChart);
+
+addPhraseRow(); // start with one empty phrase row
 
 // Expand / collapse long post text (event delegation on the table body).
 els.body.addEventListener('click', (e) => {
