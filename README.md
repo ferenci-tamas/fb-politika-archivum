@@ -25,4 +25,5 @@ A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://
 
 - Videók kérdése (1,5 TB, ennek érdemi költsége lenne zero egress cost-tal együtt is, pusztán tárhely miatt).
 - Fényképek leírása, videók feliratozása (majd szöveges vizsgálatok ezek alapján is).
+- Politikusok csoportosítása politikai pártok, politikai pártok csoportosítása kormányzat/ellenzék státusz szerint és politikai nézetrendszer szerint (ez utóbbi kérdőjeles, mert szemben az előbbi kettővel, nem tökéletesen objektív).
 - Vector database alkalmazása?
