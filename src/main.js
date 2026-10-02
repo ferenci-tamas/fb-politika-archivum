@@ -44,6 +44,11 @@ const els = {
   analysisRatio: $('analysis-ratio'),
   analysisStatus: $('analysis-status'),
   analysisChart: $('analysis-chart'),
+  elemzesMenu: $('elemzes-menu'),
+  elemzesActivity: $('elemzes-activity'),
+  elemzesNarratives: $('elemzes-narratives'),
+  activityStatus: $('activity-status'),
+  activityChart: $('activity-chart'),
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
@@ -138,6 +143,12 @@ function initDatabase() {
       case 'monthly-error':
         if (msg.reqId === analysisReqId) onMonthlyError(msg);
         break;
+      case 'activity-result':
+        if (msg.reqId === activityReqId) onActivityResult(msg);
+        break;
+      case 'activity-error':
+        if (msg.reqId === activityReqId) onActivityError(msg);
+        break;
       default:
         break;
     }
@@ -213,7 +224,7 @@ function onReady(msg) {
   setControlsDisabled(false);
   applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
   runFirstQueryIfNeeded(); // only queries if the Adatbázis tab is already showing
-  if (activeTab === 'elemzes') prepareAnalysis(); // warm + run if the user is already here
+  if (activeTab === 'elemzes') showElemzesView(elemzesView); // run the current sub-view
 }
 
 function onResult(msg) {
@@ -418,6 +429,7 @@ function updateHash() {
     body = query ? `tab=adatbazis&${query}` : 'tab=adatbazis';
   } else if (activeTab === 'elemzes') {
     const query = encodeAnalysisToHash({
+      view: elemzesView,
       phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
       accentSensitive: els.analysisAccent.checked,
       ratio: els.analysisRatio.checked
@@ -534,6 +546,10 @@ let nextPhraseId = 0;
 // At most this many phrases/series — matches the chart colour palette (line-chart.js).
 const MAX_PHRASES = 8;
 let lastMonthly = null; // most recent { series }; re-rendered on ratio toggle, no re-query
+// Elemzés sub-view (dropdown): 'activity' (all posts) or 'narratives' (phrase search).
+let elemzesView = 'narratives';
+let activityReqId = 0;
+let lastActivity = null; // cached monthly totals (static for the session)
 
 function addPhraseRow(value = '') {
   if (els.analysisPhrases.querySelectorAll('.analysis-phrase-row').length >= MAX_PHRASES) return null;
@@ -706,12 +722,113 @@ els.analysisRatio.addEventListener('change', () => {
   updateHash();
 });
 
+// --- Elemzés sub-views: activity chart + the view dropdown ------------------
+function setElemzesMenuOpen(open) {
+  els.elemzesMenu.hidden = !open;
+  els.tabElemzes.setAttribute('aria-expanded', String(open));
+}
+
+// Show one sub-view ('activity' | 'narratives') and run it. Called from setActiveTab.
+function showElemzesView(view) {
+  elemzesView = view === 'activity' ? 'activity' : 'narratives';
+  els.elemzesActivity.hidden = elemzesView !== 'activity';
+  els.elemzesNarratives.hidden = elemzesView !== 'narratives';
+  for (const item of els.elemzesMenu.querySelectorAll('.tab-menu-item')) {
+    item.setAttribute('aria-current', String(item.dataset.view === elemzesView));
+  }
+  if (elemzesView === 'activity') prepareActivity();
+  else prepareAnalysis();
+}
+
+function prepareActivity() {
+  if (!state.ready) {
+    els.activityStatus.textContent = 'Az adatbázis betöltése folyamatban…';
+    return; // onReady re-invokes showElemzesView once the DB is ready
+  }
+  if (lastActivity) {
+    drawActivityChart();
+    return;
+  }
+  activityReqId += 1;
+  els.activityStatus.textContent = 'Számítás…';
+  const loading = el('div', { class: 'chart-loading', 'aria-hidden': 'true' }, el('div', { class: 'spinner' }));
+  els.activityChart.replaceChildren(loading);
+  worker.postMessage({ type: 'activity', reqId: activityReqId });
+}
+
+function onActivityResult(msg) {
+  lastActivity = { points: msg.points, total: msg.total };
+  drawActivityChart();
+}
+
+function drawActivityChart() {
+  if (!lastActivity) return;
+  els.activityStatus.textContent = `${formatCount(lastActivity.total)} poszt havi eloszlása`;
+  renderLineChart(els.activityChart, [{ label: 'Összes poszt', points: lastActivity.points }], {
+    mode: 'count',
+    title: 'Posztolási aktivitás időben',
+    ariaLabel: 'A havonta közzétett összes poszt száma, 2008 és 2026 között'
+  });
+}
+
+function onActivityError(msg) {
+  els.activityStatus.textContent = formatErrorMessage(msg);
+  els.activityChart.replaceChildren();
+}
+
+// The Elemzés tab button opens a menu to choose the sub-view (rather than switching
+// directly); picking an item activates the tab with that view.
+els.tabElemzes.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = els.tabElemzes.getAttribute('aria-expanded') === 'true';
+  setElemzesMenuOpen(!open);
+  if (!open) els.elemzesMenu.querySelector('.tab-menu-item')?.focus();
+});
+els.tabElemzes.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    setElemzesMenuOpen(true);
+    els.elemzesMenu.querySelector('.tab-menu-item')?.focus();
+  }
+});
+els.elemzesMenu.addEventListener('click', (e) => {
+  const item = e.target.closest('.tab-menu-item');
+  if (!item) return;
+  setElemzesMenuOpen(false);
+  elemzesView = item.dataset.view === 'activity' ? 'activity' : 'narratives';
+  setActiveTab('elemzes'); // shows the sub-view + updates the hash
+  els.tabElemzes.focus();
+});
+els.elemzesMenu.addEventListener('keydown', (e) => {
+  const items = [...els.elemzesMenu.querySelectorAll('.tab-menu-item')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    setElemzesMenuOpen(false);
+    els.tabElemzes.focus();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    e.stopPropagation();
+    items[(i + 1) % items.length]?.focus();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopPropagation();
+    items[(i - 1 + items.length) % items.length]?.focus();
+  }
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.tab-dropdown')) setElemzesMenuOpen(false);
+});
+
 // Restore phrases + toggles from the hash when it is an Elemzés deep link; otherwise
 // start with a single empty row. Seeds the rows at load and on Back/Forward.
 function applyHashAnalysisToState() {
   els.analysisPhrases.replaceChildren();
   const onElemzes = new URLSearchParams(location.hash.replace(/^#/, '')).get('tab') === 'elemzes';
-  const a = onElemzes ? decodeHashToAnalysis(location.hash) : { phrases: [], accentSensitive: false, ratio: true };
+  const a = onElemzes
+    ? decodeHashToAnalysis(location.hash)
+    : { view: 'narratives', phrases: [], accentSensitive: false, ratio: true };
+  elemzesView = a.view === 'activity' ? 'activity' : 'narratives';
   els.analysisAccent.checked = a.accentSensitive;
   els.analysisRatio.checked = a.ratio;
   const phrases = a.phrases.slice(0, MAX_PHRASES);
@@ -748,6 +865,7 @@ window.addEventListener('resize', () => {
 function setActiveTab(tab, { updateUrl = true } = {}) {
   if (!TABS.includes(tab)) tab = 'nyitolap';
   activeTab = tab;
+  setElemzesMenuOpen(false); // any tab activation closes the Elemzés dropdown
   for (const t of TABS) {
     const selected = t === tab;
     tabEls[t].tab.setAttribute('aria-selected', String(selected));
@@ -759,7 +877,7 @@ function setActiveTab(tab, { updateUrl = true } = {}) {
     runFirstQueryIfNeeded(); // if the DB was preloaded, run the deferred first query now
   } else if (tab === 'elemzes') {
     initDatabase(); // the monthly histogram also runs in the worker
-    prepareAnalysis(); // warm the month boundaries, then run any typed search
+    showElemzesView(elemzesView); // show + run the selected sub-view
   }
   if (updateUrl) updateHash();
 }
@@ -783,6 +901,7 @@ function tabFromHash() {
 }
 
 for (const t of TABS) {
+  if (t === 'elemzes') continue; // the Elemzés tab opens a dropdown (wired above)
   tabEls[t].tab.addEventListener('click', () => setActiveTab(t));
 }
 els.tabs.addEventListener('keydown', (e) => {

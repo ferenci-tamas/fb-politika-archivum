@@ -154,6 +154,7 @@ self.onmessage = (event) => {
   if (msg.type === 'query') return void handleQuery(msg);
   if (msg.type === 'monthly') return void handleMonthly(msg);
   if (msg.type === 'prepare-monthly') return void handlePrepareMonthly();
+  if (msg.type === 'activity') return void handleActivity(msg);
 };
 
 async function handleQuery(msg) {
@@ -236,6 +237,37 @@ function handlePrepareMonthly() {
     ensureMonthBounds();
   } catch {
     // Non-fatal: the next monthly request retries and surfaces any real error.
+  }
+}
+
+// Monthly total post count across all authors ("Posztolási aktivitás" view). No FTS
+// at all — just the cached boundaries and the free per-month totals.
+function handleActivity(msg) {
+  if (!ready) {
+    self.postMessage({ type: 'activity-error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
+    return;
+  }
+  try {
+    vfs.clearLastError();
+    const beforeBytes = vfs.getStats().bytesFetched;
+    ensureMonthBounds();
+    const totals = monthTotals(monthBounds, meta.max_id);
+    const points = monthBounds.map((m, i) => ({ ym: m.ym, n: totals[i], total: totals[i] }));
+    self.postMessage({
+      type: 'activity-result',
+      reqId: msg.reqId,
+      points,
+      total: totals.reduce((sum, t) => sum + t, 0),
+      fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
+    });
+  } catch (err) {
+    const vfsErr = vfs && vfs.getLastError();
+    self.postMessage({
+      type: 'activity-error',
+      reqId: msg.reqId,
+      kind: (vfsErr && vfsErr.kind) || (err && err.kind),
+      message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
+    });
   }
 }
 

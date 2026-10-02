@@ -43,7 +43,13 @@
     <div class="tabs" id="tabs" role="tablist" aria-label="Nézetek" tabindex="-1">
       <button class="tab" id="tab-nyitolap" type="button" role="tab" aria-selected="true" aria-controls="panel-nyitolap">Nyitólap</button>
       <button class="tab" id="tab-adatbazis" type="button" role="tab" aria-selected="false" aria-controls="panel-adatbazis" tabindex="-1">Adatbázis</button>
-      <button class="tab" id="tab-elemzes" type="button" role="tab" aria-selected="false" aria-controls="panel-elemzes" tabindex="-1">Elemzés</button>
+      <div class="tab-dropdown">
+        <button class="tab" id="tab-elemzes" type="button" role="tab" aria-selected="false" aria-controls="panel-elemzes" aria-haspopup="true" aria-expanded="false" tabindex="-1">Elemzés <span class="tab-caret" aria-hidden="true">▾</span></button>
+        <div class="tab-menu" id="elemzes-menu" role="menu" aria-label="Elemzés nézetek" hidden>
+          <button type="button" class="tab-menu-item" role="menuitem" data-view="activity">Posztolási aktivitás időben</button>
+          <button type="button" class="tab-menu-item" role="menuitem" data-view="narratives">Narratívák alakulása időben</button>
+        </div>
+      </div>
     </div>
 
     <main>
@@ -200,30 +206,41 @@
       </section>
 
       <section id="panel-elemzes" class="panel" role="tabpanel" aria-labelledby="tab-elemzes" tabindex="0" hidden>
-        <form id="analysis-controls" class="controls" role="search" aria-label="Elemzés – keresés" autocomplete="off">
-          <div id="analysis-phrases" class="analysis-phrases"></div>
-          <div class="analysis-actions">
-            <button type="button" id="analysis-add" class="secondary">+ Újabb keresőkifejezés</button>
-            <label class="accent-toggle">
-              <input type="checkbox" id="analysis-accent" />
-              <span>Ékezetérzékeny</span>
-            </label>
-            <label class="accent-toggle">
-              <input type="checkbox" id="analysis-ratio" checked />
-              <span>Az összes poszt számához viszonyítva</span>
-            </label>
+        <div id="elemzes-activity" class="elemzes-view" hidden>
+          <h2 class="elemzes-view-title">Posztolási aktivitás időben</h2>
+          <p class="analysis-hint">A havonta közzétett összes poszt száma (minden szerző).</p>
+          <div class="status-bar">
+            <span id="activity-status" class="result-count" aria-live="polite"></span>
           </div>
-          <p class="analysis-hint">
-            Adj meg egy vagy több keresőkifejezést (ugyanaz a szintaxis, mint az Adatbázisban); a grafikon mindegyik
-            havi találatszámát — bejelölve a havi összes poszthoz viszonyított arányát — külön színnel mutatja.
-          </p>
-        </form>
-
-        <div class="status-bar">
-          <span id="analysis-status" class="result-count" aria-live="polite"></span>
+          <div id="activity-chart" class="analysis-chart" aria-live="polite"></div>
         </div>
 
-        <div id="analysis-chart" class="analysis-chart" aria-live="polite"></div>
+        <div id="elemzes-narratives" class="elemzes-view" hidden>
+          <form id="analysis-controls" class="controls" role="search" aria-label="Elemzés – keresés" autocomplete="off">
+            <div id="analysis-phrases" class="analysis-phrases"></div>
+            <div class="analysis-actions">
+              <button type="button" id="analysis-add" class="secondary">+ Újabb keresőkifejezés</button>
+              <label class="accent-toggle">
+                <input type="checkbox" id="analysis-accent" />
+                <span>Ékezetérzékeny</span>
+              </label>
+              <label class="accent-toggle">
+                <input type="checkbox" id="analysis-ratio" checked />
+                <span>Az összes poszt számához viszonyítva</span>
+              </label>
+            </div>
+            <p class="analysis-hint">
+              Adj meg egy vagy több keresőkifejezést (ugyanaz a szintaxis, mint az Adatbázisban); a grafikon mindegyik
+              havi találatszámát — bejelölve a havi összes poszthoz viszonyított arányát — külön színnel mutatja.
+            </p>
+          </form>
+
+          <div class="status-bar">
+            <span id="analysis-status" class="result-count" aria-live="polite"></span>
+          </div>
+
+          <div id="analysis-chart" class="analysis-chart" aria-live="polite"></div>
+        </div>
       </section>
     </main>
 

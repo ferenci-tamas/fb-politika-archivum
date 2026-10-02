@@ -725,6 +725,55 @@ button:disabled {
   gap: 16px;
   margin-top: 10px;
 }
+
+/* Elemzés dropdown (tab menu) and its two sub-views */
+.tab-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+.tab-caret {
+  font-size: 0.8em;
+  margin-left: 2px;
+}
+.tab-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  min-width: 240px;
+  margin-top: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.tab-menu-item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.tab-menu-item:hover,
+.tab-menu-item:focus-visible {
+  background: var(--surface-alt);
+  outline: none;
+}
+.tab-menu-item[aria-current='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+.elemzes-view-title {
+  font-size: 1.2rem;
+  margin: 4px 2px 0;
+}
 .analysis-hint {
   margin: 10px 2px 0;
   color: var(--muted);

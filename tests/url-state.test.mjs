@@ -57,4 +57,10 @@ test('analysis decode defaults ratio to on and tolerates a leading #', () => {
   assert.deepEqual(a.phrases, ['alma']);
   assert.equal(a.ratio, true);
   assert.equal(a.accentSensitive, false);
+  assert.equal(a.view, 'narratives');
+});
+
+test('analysis hash carries the activity sub-view with no phrases', () => {
+  assert.equal(encodeAnalysisToHash({ view: 'activity', phrases: [], accentSensitive: false, ratio: true }), 'view=activity');
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&view=activity').view, 'activity');
 });

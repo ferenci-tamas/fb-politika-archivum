@@ -152,9 +152,10 @@ function exportChartPng() {
     ? '(arány az összes poszt számához viszonyítva)'
     : '(posztok száma havonta)';
   const titleText =
-    series.length === 1
+    last.title ||
+    (series.length === 1
       ? `${hungarianArticle(series[0].label)} ${series[0].label} keresőkifejezés előfordulása az időben`
-      : 'Keresőkifejezések előfordulása az időben';
+      : 'Keresőkifejezések előfordulása az időben');
 
   chartInstance.setOption({
     animation: false,
@@ -236,7 +237,7 @@ export function preloadChart() {
  * @param {{label:string, points:{ym:string,n:number,total:number}[]}[]} series
  * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
  */
-export async function renderLineChart(container, series, { ariaLabel, mode = 'count' } = {}) {
+export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '' } = {}) {
   if (!container) return;
   disposeChart();
   if (!series || series.length === 0) {
@@ -244,7 +245,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     clear(container);
     return;
   }
-  last = { container, series, ariaLabel, mode };
+  last = { container, series, ariaLabel, mode, title };
 
   let echarts;
   try {
@@ -284,7 +285,7 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode });
+      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title });
     });
   }
 }

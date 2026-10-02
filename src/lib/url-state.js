@@ -58,27 +58,29 @@ export function decodeHashToView(hash, opts) {
 // with the Adatbázis search above.
 
 /**
- * @param {{phrases:string[], accentSensitive:boolean, ratio:boolean}} view
- * @returns {string} the hash body (without a leading '#'); '' when there are no phrases
+ * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean}} v
+ * @returns {string} hash body (without a leading '#'); '' for the default empty narratives view
  */
-export function encodeAnalysisToHash(view) {
+export function encodeAnalysisToHash(v) {
   const p = new URLSearchParams();
-  for (const phrase of view.phrases || []) {
+  if (v.view === 'activity') p.set('view', 'activity'); // 'narratives' is the default
+  for (const phrase of v.phrases || []) {
     if (phrase && phrase.trim() !== '') p.append('q', phrase.trim());
   }
-  if (p.getAll('q').length === 0) return '';
-  if (view.accentSensitive) p.set('accent', '1');
-  if (view.ratio === false) p.set('ratio', '0'); // ratio defaults to on
+  if (v.view !== 'activity' && p.getAll('q').length === 0) return '';
+  if (v.accentSensitive) p.set('accent', '1');
+  if (v.ratio === false) p.set('ratio', '0'); // ratio defaults to on
   return p.toString();
 }
 
 /**
  * @param {string} hash the location hash (leading '#' optional)
- * @returns {{phrases:string[], accentSensitive:boolean, ratio:boolean}}
+ * @returns {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean}}
  */
 export function decodeHashToAnalysis(hash) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
   return {
+    view: p.get('view') === 'activity' ? 'activity' : 'narratives',
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
     accentSensitive: p.get('accent') === '1',
     ratio: p.get('ratio') !== '0'
