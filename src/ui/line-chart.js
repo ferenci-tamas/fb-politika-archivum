@@ -19,6 +19,13 @@ const SAVE_ICON = 'path://M4.7,22.9L29.3,45.5L54.7,23.4M4.6,43.6L4.6,58L53.8,58L
 // the light and dark surfaces. ECharts cycles it if there are more series.
 const COLORS = ['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00', '#56B4E9', '#8E44AD', '#999999'];
 
+// Top padding for the plot grid. Both variants reserve a strip above the plot for the
+// toolbox (download) button, so hovering it stays outside the coordinate area and never
+// triggers the axis-pointer dashed line; the multi-series value additionally clears the
+// legend row.
+const GRID_TOP_SINGLE = 30;
+const GRID_TOP_MULTI = 40;
+
 let chartInstance = null;
 let last = null; // { container, series, ariaLabel, mode } — for re-theme / export
 
@@ -75,7 +82,7 @@ function buildOption(series, ariaLabel, mode) {
       pageTextStyle: { color: muted },
       pageIconColor: muted
     },
-    grid: { top: series.length > 1 ? 40 : 18, right: 20, bottom: 66, left: 56 },
+    grid: { top: series.length > 1 ? GRID_TOP_MULTI : GRID_TOP_SINGLE, right: 20, bottom: 66, left: 56 },
     tooltip: {
       trigger: 'axis',
       backgroundColor: surface,
@@ -195,7 +202,7 @@ function exportChartPng() {
   // Restore the on-screen chart: drop the title + attribution and the extra top room.
   chartInstance.setOption({
     animation: false,
-    grid: { top: multi ? 40 : 18 },
+    grid: { top: multi ? GRID_TOP_MULTI : GRID_TOP_SINGLE },
     legend: { top: 6 },
     title: { show: false, text: '', subtext: '' },
     graphic: [{ id: 'attribution', $action: 'remove' }]
