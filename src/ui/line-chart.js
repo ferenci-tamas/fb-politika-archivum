@@ -96,6 +96,13 @@ function showMessage(container, message) {
   container.append(div);
 }
 
+/** Warm the lazily-loaded ECharts chunk (fetch + parse) ahead of first use — e.g.
+ *  while the user reads the landing page. Fire-and-forget; a real render still
+ *  handles (and surfaces) a genuine load failure. */
+export function preloadChart() {
+  import('./echarts-core.js').catch(() => {});
+}
+
 /**
  * Render the monthly chart into `container`. Async because ECharts is loaded on
  * demand; the caller fires it and does not await.

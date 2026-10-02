@@ -13,7 +13,7 @@ import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToD
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
-import { renderLineChart } from './ui/line-chart.js';
+import { renderLineChart, preloadChart } from './ui/line-chart.js';
 import { encodeViewToHash, decodeHashToView } from './lib/url-state.js';
 import { marked } from 'marked';
 import landingMarkdown from '../landing.md?raw';
@@ -704,14 +704,17 @@ initImagePreview(els.body);
 setControlsDisabled(true);
 setActiveTab(tabFromHash(), { updateUrl: false });
 
-// Preload the database in the background while the user reads the landing page,
-// so opening Adatbázis is instant. The first query is deferred until that tab is
-// actually shown (runFirstQueryIfNeeded), so nothing renders or announces early.
-if (activeTab !== 'adatbazis') {
-  const preloadDatabase = () => initDatabase();
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(preloadDatabase, { timeout: 2000 });
-  } else {
-    setTimeout(preloadDatabase, 1200);
-  }
+// Warm the lazily-loaded pieces during idle so the next tab opens instantly. The
+// ECharts chunk is always preloaded (most visitors reach Elemzés eventually); the
+// database worker is warmed too unless we're already on Adatbázis, where
+// setActiveTab has just started it for the feed. The DB's first query stays
+// deferred (runFirstQueryIfNeeded), so nothing renders or announces early.
+const preload = () => {
+  if (activeTab !== 'adatbazis') initDatabase();
+  preloadChart();
+};
+if (typeof requestIdleCallback === 'function') {
+  requestIdleCallback(preload, { timeout: 2000 });
+} else {
+  setTimeout(preload, 1200);
 }
