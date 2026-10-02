@@ -19,12 +19,14 @@ const SAVE_ICON = 'path://M4.7,22.9L29.3,45.5L54.7,23.4M4.6,43.6L4.6,58L53.8,58L
 // the light and dark surfaces. ECharts cycles it if there are more series.
 const COLORS = ['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00', '#56B4E9', '#8E44AD', '#999999'];
 
-// Top padding for the plot grid. Both variants reserve a strip above the plot for the
-// toolbox (download) button, so hovering it stays outside the coordinate area and never
-// triggers the axis-pointer dashed line; the multi-series value additionally clears the
-// legend row.
+// Keep the toolbox (download) icon — pinned top-right — clear of the plot's coordinate
+// area so hovering it never triggers the axis-pointer dashed line. Multi-series charts
+// already clear it vertically with the legend row (GRID_TOP_MULTI); single-series charts
+// reserve a top strip (GRID_TOP_SINGLE) and widen the right margin (GRID_RIGHT_SINGLE) so
+// the icon sits in the top-right margin, outside the grid on both axes.
 const GRID_TOP_SINGLE = 30;
 const GRID_TOP_MULTI = 40;
+const GRID_RIGHT_SINGLE = 34;
 
 let chartInstance = null;
 let last = null; // { container, series, ariaLabel, mode } — for re-theme / export
@@ -82,7 +84,12 @@ function buildOption(series, ariaLabel, mode) {
       pageTextStyle: { color: muted },
       pageIconColor: muted
     },
-    grid: { top: series.length > 1 ? GRID_TOP_MULTI : GRID_TOP_SINGLE, right: 20, bottom: 66, left: 56 },
+    grid: {
+      top: series.length > 1 ? GRID_TOP_MULTI : GRID_TOP_SINGLE,
+      right: series.length > 1 ? 20 : GRID_RIGHT_SINGLE,
+      bottom: 66,
+      left: 56
+    },
     tooltip: {
       trigger: 'axis',
       backgroundColor: surface,
