@@ -1,4 +1,4 @@
-# Magyar közéleti és politikai Facebook-posztok kereshető archívuma, 2008–2026.
+# Magyar közéleti és politikai Facebook-posztok kereshető archívuma, 2008–2026
 
 Összeállította: Ferenci Tamás (<https://www.medstat.hu/>)
 
