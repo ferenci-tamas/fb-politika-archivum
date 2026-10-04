@@ -271,7 +271,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     host.setAttribute('role', 'img');
     if (ariaLabel) host.setAttribute('aria-label', ariaLabel);
     container.append(host);
-    chartInstance = echarts.init(host, null, { renderer: 'canvas' });
+    chartInstance = echarts.init(host, null, { renderer: 'canvas', locale: 'HU' });
     chartInstance.setOption(buildOption(series, ariaLabel, mode), true);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');

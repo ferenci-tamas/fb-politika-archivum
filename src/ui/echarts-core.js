@@ -30,4 +30,25 @@ echarts.use([
   CanvasRenderer
 ]);
 
+// Hungarian locale for the time axis, so zoomed-in month ticks read as the standard
+// Hungarian abbreviations (jan., feb., márc., …) rather than the English defaults.
+// Only the `time` section is consulted here: the chart sets its toolbox title and aria
+// description explicitly, so no other locale strings are needed.
+echarts.registerLocale('HU', {
+  time: {
+    month: [
+      'január', 'február', 'március', 'április', 'május', 'június',
+      'július', 'augusztus', 'szeptember', 'október', 'november', 'december'
+    ],
+    monthAbbr: [
+      'jan.', 'feb.', 'márc.', 'ápr.', 'máj.', 'jún.',
+      'júl.', 'aug.', 'szept.', 'okt.', 'nov.', 'dec.'
+    ],
+    dayOfWeek: [
+      'vasárnap', 'hétfő', 'kedd', 'szerda', 'csütörtök', 'péntek', 'szombat'
+    ],
+    dayOfWeekAbbr: ['V', 'H', 'K', 'Sze', 'Cs', 'P', 'Szo']
+  }
+});
+
 export default echarts;
