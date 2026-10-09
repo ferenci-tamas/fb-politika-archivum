@@ -28,3 +28,4 @@ A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://
 - Politikusok csoportosítása politikai pártok, politikai pártok csoportosítása kormányzat/ellenzék státusz szerint és politikai nézetrendszer szerint (ez utóbbi kérdőjeles, mert szemben az előbbi kettővel, nem tökéletesen objektív).
 - Vector database alkalmazása?
 - Spline simítás alkalmazása a grafikonokon a havi bontás helyett.
+- Videók -- esetleg képek -- integritásvizsgálata (esetleges letöltési hibákra tekintettel).
