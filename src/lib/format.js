@@ -1,48 +1,90 @@
 // Hungarian date/time formatting and date-range conversions.
 //
-// posts.time holds UNIX seconds that SQLite-converter.R produced by interpreting
-// the scraped timestamps as UTC (as.POSIXct(..., tz = "UTC")). To reproduce the
-// original wall-clock time we therefore format and filter in UTC; using the
-// browser's local zone would shift every timestamp. All functions here are pure.
+// posts.time holds true UNIX instants (SQLite-converter.R stored the scrape's UTC
+// epoch). Readers expect Hungarian wall-clock times, so we format and filter in the
+// Europe/Budapest zone (CET/CEST, DST-aware) via Intl. All functions here are pure.
 
-const pad = (n, width = 2) => String(n).padStart(width, '0');
+const HU_TZ = 'Europe/Budapest';
 
-/** Format UNIX seconds as "YYYY. MM. DD. HH:MM" (UTC). */
+// Date/time fields of a UNIX-seconds instant, in Hungarian local time. Intl zero-pads
+// the 2-digit fields; hourCycle 'h23' keeps midnight as 00 (not 24). The en-GB locale
+// just guarantees Latin digits — we read fields by type, so ordering is irrelevant.
+function huParts(unixSeconds) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: HU_TZ,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).formatToParts(new Date(unixSeconds * 1000));
+  const g = (type) => parts.find((p) => p.type === type).value;
+  return { y: g('year'), m: g('month'), d: g('day'), hh: g('hour'), mm: g('minute') };
+}
+
+/** Format UNIX seconds as "YYYY. MM. DD. HH:MM" in Hungarian local time. */
 export function formatHuDateTime(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
-  const d = new Date(unixSeconds * 1000);
-  return (
-    `${d.getUTCFullYear()}. ${pad(d.getUTCMonth() + 1)}. ${pad(d.getUTCDate())}. ` +
-    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
-  );
+  const { y, m, d, hh, mm } = huParts(unixSeconds);
+  return `${y}. ${m}. ${d}. ${hh}:${mm}`;
 }
 
-/** Format UNIX seconds as "YYYY. MM. DD." (UTC) — date only. */
+/** Format UNIX seconds as "YYYY. MM. DD." (Hungarian local time) — date only. */
 export function formatHuDate(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
-  const d = new Date(unixSeconds * 1000);
-  return `${d.getUTCFullYear()}. ${pad(d.getUTCMonth() + 1)}. ${pad(d.getUTCDate())}.`;
+  const { y, m, d } = huParts(unixSeconds);
+  return `${y}. ${m}. ${d}.`;
 }
 
-/** 'YYYY-MM-DD' (from <input type="date">) -> inclusive UTC-midnight UNIX seconds. */
+// Europe/Budapest offset from UTC (ms) at a given instant: render the instant in the
+// zone, read it back as if it were UTC, and diff. Positive means the zone leads UTC.
+function huOffsetMs(utcMs) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: HU_TZ,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).formatToParts(new Date(utcMs));
+  const g = (type) => Number(parts.find((p) => p.type === type).value);
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - utcMs;
+}
+
+// UNIX seconds for a Hungarian-local midnight of year/month/day. `d` may overflow (e.g.
+// 32) — Date.UTC normalizes it. The offset is resolved twice so a DST change on that
+// day is handled correctly.
+function huMidnightToUnix(y, m, d) {
+  const guessMs = Date.UTC(y, m - 1, d, 0, 0, 0);
+  const off1 = huOffsetMs(guessMs);
+  let tsMs = guessMs - off1;
+  const off2 = huOffsetMs(tsMs);
+  if (off2 !== off1) tsMs = guessMs - off2;
+  return Math.floor(tsMs / 1000);
+}
+
+/** 'YYYY-MM-DD' (from <input type="date">) -> inclusive Budapest-midnight UNIX seconds. */
 export function dateInputToUnixStart(value) {
   const parts = parseDateInput(value);
   if (!parts) return null;
-  return Math.floor(Date.UTC(parts.y, parts.m - 1, parts.d, 0, 0, 0) / 1000);
+  return huMidnightToUnix(parts.y, parts.m, parts.d);
 }
 
-/** 'YYYY-MM-DD' -> exclusive upper bound: UTC midnight of the *next* day. */
+/** 'YYYY-MM-DD' -> exclusive upper bound: Budapest midnight of the *next* day. */
 export function dateInputToUnixEndExclusive(value) {
   const parts = parseDateInput(value);
   if (!parts) return null;
-  return Math.floor(Date.UTC(parts.y, parts.m - 1, parts.d + 1, 0, 0, 0) / 1000);
+  return huMidnightToUnix(parts.y, parts.m, parts.d + 1);
 }
 
-/** UNIX seconds -> 'YYYY-MM-DD' (UTC), for pre-filling <input type="date">. */
+/** UNIX seconds -> 'YYYY-MM-DD' (Budapest local), for pre-filling <input type="date">. */
 export function unixToDateInput(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
-  const d = new Date(unixSeconds * 1000);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  const { y, m, d } = huParts(unixSeconds);
+  return `${y}-${m}-${d}`;
 }
 
 function parseDateInput(value) {

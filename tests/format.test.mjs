@@ -10,20 +10,24 @@ import {
   hungarianArticle
 } from '../src/lib/format.js';
 
-test('formatHuDateTime formats UTC as "YYYY. MM. DD. HH:MM"', () => {
-  assert.equal(formatHuDateTime(0), '1970. 01. 01. 00:00');
-  // 2020-01-02 03:04:00 UTC
-  assert.equal(formatHuDateTime(Date.UTC(2020, 0, 2, 3, 4, 0) / 1000), '2020. 01. 02. 03:04');
+test('formatHuDateTime formats Budapest local as "YYYY. MM. DD. HH:MM"', () => {
+  assert.equal(formatHuDateTime(0), '1970. 01. 01. 01:00'); // 1970-01-01 00:00 UTC + 1h (CET)
+  // 2020-01-02 03:04 UTC -> 04:04 Budapest (CET, +1)
+  assert.equal(formatHuDateTime(Date.UTC(2020, 0, 2, 3, 4, 0) / 1000), '2020. 01. 02. 04:04');
+  // 2020-07-01 00:30 UTC -> 02:30 Budapest (CEST, +2) — DST-aware
+  assert.equal(formatHuDateTime(Date.UTC(2020, 6, 1, 0, 30, 0) / 1000), '2020. 07. 01. 02:30');
 });
 
-test('formatHuDate formats date only', () => {
+test('formatHuDate formats date only (Budapest local)', () => {
+  // 2026-04-18 21:53 UTC -> 23:53 Budapest, still the same day
   assert.equal(formatHuDate(Date.UTC(2026, 3, 18, 21, 53) / 1000), '2026. 04. 18.');
 });
 
-test('date inputs convert to UTC boundaries', () => {
-  assert.equal(dateInputToUnixStart('2020-01-01'), 1577836800);
-  // exclusive upper bound is the next UTC midnight
-  assert.equal(dateInputToUnixEndExclusive('2020-12-31'), 1609459200);
+test('date inputs convert to Budapest-midnight boundaries', () => {
+  // 2020-01-01 00:00 Budapest (CET) == 2019-12-31 23:00 UTC
+  assert.equal(dateInputToUnixStart('2020-01-01'), 1577833200);
+  // exclusive upper bound is the next Budapest midnight
+  assert.equal(dateInputToUnixEndExclusive('2020-12-31'), 1609455600);
 });
 
 test('invalid date inputs return null', () => {
