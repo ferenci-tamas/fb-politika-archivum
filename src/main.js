@@ -1077,9 +1077,10 @@ window.addEventListener('hashchange', () => {
 });
 
 // Render the landing page from landing.md (trusted, author-authored Markdown).
-// marked has no smartypants option, so convert the author's `--` to an em dash
-// ourselves. The lookarounds match exactly two hyphens, leaving `---` untouched.
-els.landing.innerHTML = marked.parse(landingMarkdown.replace(/(?<!-)--(?!-)/g, '—'));
+// marked has no smartypants option, so convert the author's `--` to an en dash
+// (the Hungarian gondolatjel) ourselves. The lookarounds match exactly two
+// hyphens, leaving `---` untouched.
+els.landing.innerHTML = marked.parse(landingMarkdown.replace(/(?<!-)--(?!-)/g, '–'));
 
 // Hover/focus thumbnail preview over the numbered image links in the results.
 initImagePreview(els.body);
