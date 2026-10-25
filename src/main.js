@@ -1023,10 +1023,18 @@ window.addEventListener('resize', () => {
 // query, so the classes below have no visual effect there.
 const narrowMQ = window.matchMedia('(max-width: 720px)');
 
+// Timestamp (performance.now) until which auto-hide is ignored. Toggling the pane
+// changes its height, and the browser's scroll anchoring then shifts scrollY to
+// keep content stable — which the scroll handler would otherwise misread as a
+// deliberate scroll-down and hide the pane the user just opened. A short grace
+// window lets an explicit open/close stick.
+let autohideSuppressedUntil = 0;
+
 function setPanelExpanded(controlsEl, toggleEl, expanded) {
   controlsEl.classList.toggle('controls--collapsed', !expanded);
   toggleEl.setAttribute('aria-expanded', String(expanded));
   if (expanded) controlsEl.classList.remove('controls--hidden'); // never hide an open panel
+  autohideSuppressedUntil = performance.now() + 400;
 }
 
 // Count the result-narrowing filters that are active (author, date range, accent
@@ -1093,6 +1101,10 @@ function onControlsScroll() {
   const y = window.scrollY;
   const dy = y - lastScrollY;
   lastScrollY = y;
+  // Skip the scroll-anchoring nudge that follows an explicit toggle (see
+  // autohideSuppressedUntil); lastScrollY stays synced so the next real scroll
+  // still measures a correct delta.
+  if (performance.now() < autohideSuppressedUntil) return;
   if (Math.abs(dy) < 6) return; // ignore sub-pixel jitter and rubber-banding
   if (y < 72 || dy < 0) {
     panel.classList.remove('controls--hidden'); // near the top, or scrolling up
