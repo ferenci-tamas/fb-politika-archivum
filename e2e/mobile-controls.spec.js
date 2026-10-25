@@ -115,3 +115,21 @@ test('focusing a date field prevents auto-hide (regression)', async ({ page }) =
   await expect(controls).not.toHaveClass(/controls--hidden/);
   await expect(page.locator('#date-from')).toBeFocused();
 });
+
+test('tapping a date field requests the native picker on a touch pointer', async ({ page }) => {
+  await openDatabaseTab(page);
+  await page.locator('#filters-toggle').click(); // expand so the date fields show
+  // Sanity: the mobile profile reports a coarse pointer (what gates the showPicker call).
+  expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+  // Spy on the native showPicker for both date inputs.
+  await page.evaluate(() => {
+    window.__pickCalls = [];
+    for (const id of ['date-from', 'date-to']) {
+      document.getElementById(id).showPicker = function () {
+        window.__pickCalls.push(id);
+      };
+    }
+  });
+  await page.locator('#date-from').click();
+  expect(await page.evaluate(() => window.__pickCalls)).toContain('date-from');
+});

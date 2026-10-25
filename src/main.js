@@ -544,6 +544,24 @@ els.searchClear.addEventListener('click', () => {
 els.accent.addEventListener('change', readFiltersAndReload);
 els.dateFrom.addEventListener('change', readFiltersAndReload);
 els.dateTo.addEventListener('change', readFiltersAndReload);
+
+// Some touch browsers (observed on Android Chrome) don't reliably open the native
+// date picker when the field is tapped, even though the input is enabled and
+// unobstructed. Explicitly request it on tap. Gated to coarse pointers so desktop
+// users can still click to position the cursor and type a date; wrapped in try/catch
+// for browsers without showPicker or when a picker is already open.
+const coarsePointer = window.matchMedia('(pointer: coarse)');
+for (const dateInput of [els.dateFrom, els.dateTo]) {
+  dateInput.addEventListener('click', () => {
+    if (coarsePointer.matches && typeof dateInput.showPicker === 'function') {
+      try {
+        dateInput.showPicker();
+      } catch {
+        /* unsupported here, or a picker is already open */
+      }
+    }
+  });
+}
 els.sort.addEventListener('change', readFiltersAndReload);
 els.pageSize.addEventListener('change', readFiltersAndReload);
 
