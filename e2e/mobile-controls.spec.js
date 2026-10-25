@@ -101,7 +101,7 @@ test('opening Szurok while scrolled keeps the pane visible (regression)', async 
   await expect(controls).not.toHaveClass(/controls--hidden/);
 });
 
-test('focusing a date field prevents auto-hide (regression)', async ({ page }) => {
+test('auto-hides on scroll even while a filter field is focused', async ({ page }) => {
   await openDatabaseTab(page);
   const controls = page.locator('#controls');
   await makeScrollable(page);
@@ -109,11 +109,11 @@ test('focusing a date field prevents auto-hide (regression)', async ({ page }) =
   await page.locator('#filters-toggle').click(); // expand so the date field is shown
   await page.locator('#date-from').focus();
   await expect(page.locator('#date-from')).toBeFocused();
-  // Let the focusin grace window lapse so this isolates the active-element guard.
+  // Selecting a filter leaves its field focused; after the brief focus grace window,
+  // scrolling down must still collapse the pane so the results get the full screen.
   await page.waitForTimeout(500);
   await scrollWindow(page, 800);
-  await expect(controls).not.toHaveClass(/controls--hidden/);
-  await expect(page.locator('#date-from')).toBeFocused();
+  await expect(controls).toHaveClass(/controls--hidden/);
 });
 
 test('tapping a date field requests the native picker on a touch pointer', async ({ page }) => {

@@ -1126,9 +1126,6 @@ function onControlsScroll() {
   // autohideSuppressedUntil); lastScrollY stays synced so the next real scroll
   // still measures a correct delta.
   if (performance.now() < autohideSuppressedUntil) return;
-  // Never hide a pane the user is interacting with: focusing a field (date picker,
-  // select, author box) scrolls it into view, which would otherwise hide the pane.
-  if (panel.contains(document.activeElement)) return;
   if (Math.abs(dy) < 6) return; // ignore sub-pixel jitter and rubber-banding
   if (y < 72 || dy < 0) {
     panel.classList.remove('controls--hidden'); // near the top, or scrolling up
