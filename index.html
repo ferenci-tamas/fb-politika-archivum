@@ -59,7 +59,7 @@
       </section>
 
       <section id="panel-adatbazis" class="panel panel-db" role="tabpanel" aria-labelledby="tab-adatbazis" tabindex="0" hidden>
-        <form id="controls" class="controls" role="search" aria-label="Keresés és szűrés" autocomplete="off">
+        <form id="controls" class="controls controls--collapsed" role="search" aria-label="Keresés és szűrés" autocomplete="off">
           <div class="search-row">
             <div class="search-field">
               <label class="visually-hidden" for="search">Keresés a posztok szövegében</label>
@@ -75,6 +75,17 @@
                 ×
               </button>
             </div>
+            <button
+              type="button"
+              id="filters-toggle"
+              class="secondary filters-toggle"
+              aria-expanded="false"
+              aria-controls="filter-row"
+            >
+              <span>Szűrők</span>
+              <span id="filters-badge" class="filters-badge" aria-hidden="true" hidden></span>
+              <span class="filters-toggle-caret" aria-hidden="true">⌄</span>
+            </button>
             <label class="accent-toggle">
               <input type="checkbox" id="accent" />
               <span>Ékezetérzékeny</span>
@@ -94,7 +105,7 @@
             </details>
           </div>
 
-          <div class="filter-row">
+          <div class="filter-row" id="filter-row">
             <div class="field">
               <label for="author-input">Szerző</label>
               <div class="combobox" id="author-combobox">
@@ -253,10 +264,14 @@
             (a keresőkifejezés megalkotásához az Adatbázis pontnál látott minden eszköz használható). Több keresőkifejezés is megadható,
             ez esetben mindegyik megjelenik az ábrán, külön színnel.
           </p>
-          <form id="analysis-controls" class="controls" role="search" aria-label="Elemzés – keresés" autocomplete="off">
+          <form id="analysis-controls" class="controls controls--collapsed" role="search" aria-label="Elemzés – keresés" autocomplete="off">
             <div id="analysis-phrases" class="analysis-phrases"></div>
             <div class="analysis-actions">
               <button type="button" id="analysis-add" class="secondary">+ Újabb keresőkifejezés</button>
+              <button type="button" id="analysis-toggle" class="secondary filters-toggle" aria-expanded="false">
+                <span>Beállítások</span>
+                <span class="filters-toggle-caret" aria-hidden="true">⌄</span>
+              </button>
               <label class="accent-toggle">
                 <input type="checkbox" id="analysis-accent" />
                 <span>Ékezetérzékeny</span>

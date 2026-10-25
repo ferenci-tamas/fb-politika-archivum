@@ -39,6 +39,8 @@ const els = {
   panelElemzes: $('panel-elemzes'),
   landing: $('landing'),
   analysisPhrases: $('analysis-phrases'),
+  analysisControls: $('analysis-controls'),
+  analysisToggle: $('analysis-toggle'),
   analysisAdd: $('analysis-add'),
   analysisAccent: $('analysis-accent'),
   analysisRatio: $('analysis-ratio'),
@@ -71,6 +73,9 @@ const els = {
   sort: $('sort'),
   pageSize: $('page-size'),
   filtersClear: $('filters-clear'),
+  controls: $('controls'),
+  filtersToggle: $('filters-toggle'),
+  filtersBadge: $('filters-badge'),
   resultCount: $('result-count'),
   loadingStatus: $('loading-status'),
   errorBanner: $('error-banner'),
@@ -228,6 +233,7 @@ function onReady(msg) {
     formatCount,
     onChange: (authorIds) => {
       state.authorIds = authorIds;
+      updateFilterBadge();
       send('first');
     }
   });
@@ -251,6 +257,7 @@ function onReady(msg) {
   hideAppLoading();
   setControlsDisabled(false);
   applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
+  syncFiltersCollapsed(); // open the mobile filter section if the URL carried any filter
   restoreActivityAuthorsFromHash(); // restore the Elemzés activity author selection, if any
   runFirstQueryIfNeeded(); // only queries if the Adatbázis tab is already showing
   if (activeTab === 'elemzes') showElemzesView(elemzesView); // run the current sub-view
@@ -501,6 +508,7 @@ function readFiltersAndReload() {
   state.accentSensitive = els.accent.checked;
   state.sort = els.sort.value;
   state.pageSize = FEED_PAGE_SIZES.includes(Number(els.pageSize.value)) ? Number(els.pageSize.value) : DEFAULT_PAGE_SIZE;
+  updateFilterBadge();
   send('first');
 }
 
@@ -783,7 +791,10 @@ function showElemzesView(view) {
   }
   if (elemzesView === 'activity') prepareActivity();
   else if (elemzesView === 'links') prepareLinks();
-  else prepareAnalysis();
+  else {
+    els.analysisControls.classList.remove('controls--hidden'); // reveal the pane when (re)entering narratives
+    prepareAnalysis();
+  }
 }
 
 // Stable cache key for the current author selection.
@@ -1003,6 +1014,112 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => refreshExpandControls(els.body), 150);
 });
 
+// --- mobile controls: collapsible filters + auto-hide on scroll -------------
+// On narrow screens the sticky search/filter pane is tall enough to eat much of
+// the viewport, so keep the search box pinned, tuck the rest behind a "Szűrők"
+// toggle, and slide the whole pane up out of the way while scrolling down through
+// results (it returns on any upward scroll). All of this is inert on wide screens:
+// the toggle is display:none and the collapse/hide CSS lives in the 720px media
+// query, so the classes below have no visual effect there.
+const narrowMQ = window.matchMedia('(max-width: 720px)');
+
+function setPanelExpanded(controlsEl, toggleEl, expanded) {
+  controlsEl.classList.toggle('controls--collapsed', !expanded);
+  toggleEl.setAttribute('aria-expanded', String(expanded));
+  if (expanded) controlsEl.classList.remove('controls--hidden'); // never hide an open panel
+}
+
+// Count the result-narrowing filters that are active (author, date range, accent
+// sensitivity). Sort and page size are display options, not filters, so they're
+// excluded from both the badge and the auto-expand decision.
+function activeFilterCount() {
+  let n = 0;
+  if (state.authorIds.length > 0) n += 1;
+  if (state.dateFrom != null || state.dateTo != null) n += 1;
+  if (state.accentSensitive) n += 1;
+  return n;
+}
+
+// Reflect the active-filter count on the collapsed "Szűrők" toggle so hidden
+// filters aren't forgotten. The numeric pill is aria-hidden; the count rides the
+// button's accessible name instead, kept prefixed with the visible "Szűrők".
+function updateFilterBadge() {
+  const n = activeFilterCount();
+  els.filtersBadge.textContent = n > 0 ? String(n) : '';
+  els.filtersBadge.hidden = n === 0;
+  if (n > 0) {
+    els.filtersToggle.setAttribute('aria-label', `Szűrők, ${n} aktív szűrő`);
+  } else {
+    els.filtersToggle.removeAttribute('aria-label');
+  }
+}
+
+// Open the filter section when filters arrive already applied (shared/bookmarked
+// URL) so they aren't silently hidden behind the collapsed bar; else start closed.
+function syncFiltersCollapsed() {
+  updateFilterBadge();
+  setPanelExpanded(els.controls, els.filtersToggle, activeFilterCount() > 0);
+}
+
+els.filtersToggle.addEventListener('click', () => {
+  setPanelExpanded(els.controls, els.filtersToggle, els.filtersToggle.getAttribute('aria-expanded') !== 'true');
+});
+els.analysisToggle.addEventListener('click', () => {
+  setPanelExpanded(els.analysisControls, els.analysisToggle, els.analysisToggle.getAttribute('aria-expanded') !== 'true');
+});
+
+// Reveal the pane for keyboard users who tab into it while it's auto-hidden.
+els.controls.addEventListener('focusin', () => {
+  els.controls.classList.remove('controls--hidden');
+});
+els.analysisControls.addEventListener('focusin', () => {
+  els.analysisControls.classList.remove('controls--hidden');
+});
+
+// The sticky controls that auto-hide on the current view: the Adatbázis feed pane,
+// or the Elemzés narratives search pane. Other views have no sticky controls.
+function autohideControls() {
+  if (activeTab === 'adatbazis') return els.controls;
+  if (activeTab === 'elemzes' && elemzesView === 'narratives') return els.analysisControls;
+  return null;
+}
+let lastScrollY = window.scrollY;
+let scrollTicking = false;
+function onControlsScroll() {
+  scrollTicking = false;
+  if (!narrowMQ.matches) return;
+  const panel = autohideControls();
+  if (!panel) return;
+  const y = window.scrollY;
+  const dy = y - lastScrollY;
+  lastScrollY = y;
+  if (Math.abs(dy) < 6) return; // ignore sub-pixel jitter and rubber-banding
+  if (y < 72 || dy < 0) {
+    panel.classList.remove('controls--hidden'); // near the top, or scrolling up
+  } else {
+    panel.classList.add('controls--hidden'); // scrolling down
+  }
+}
+window.addEventListener(
+  'scroll',
+  () => {
+    if (scrollTicking) return;
+    scrollTicking = true;
+    requestAnimationFrame(onControlsScroll);
+  },
+  { passive: true }
+);
+
+// Crossing back to the wide breakpoint clears the hidden transform so the desktop
+// layout is never left shifted off-screen.
+narrowMQ.addEventListener('change', (e) => {
+  lastScrollY = window.scrollY;
+  if (!e.matches) {
+    els.controls.classList.remove('controls--hidden');
+    els.analysisControls.classList.remove('controls--hidden');
+  }
+});
+
 // --- tabs -------------------------------------------------------------------
 
 function setActiveTab(tab, { updateUrl = true } = {}) {
@@ -1016,6 +1133,7 @@ function setActiveTab(tab, { updateUrl = true } = {}) {
     tabEls[t].panel.hidden = !selected;
   }
   if (tab === 'adatbazis') {
+    els.controls.classList.remove('controls--hidden'); // re-entering the tab always reveals the pane
     initDatabase(); // start the worker on first open (idempotent)
     runFirstQueryIfNeeded(); // if the DB was preloaded, run the deferred first query now
   } else if (tab === 'elemzes') {
@@ -1066,6 +1184,7 @@ window.addEventListener('hashchange', () => {
   if (tab === 'adatbazis' && state.ready) {
     // Apply the new hash's filters before switching so we don't fire a stale query.
     applyHashFiltersToState();
+    syncFiltersCollapsed(); // reflect the new URL's filters in the mobile collapse state
     firstQueryDone = true;
   }
   if (tab === 'elemzes') {

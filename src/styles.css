@@ -248,6 +248,43 @@ main {
   margin: 12px 0;
   display: grid;
   gap: 12px;
+  /* Transitioned so the mobile auto-hide (.controls--hidden) slides instead of
+     jumping. The transform is only ever applied on narrow screens. */
+  transition: transform 0.22s ease;
+}
+
+/* "Szűrők" toggle — collapses the secondary filters on narrow screens. Hidden on
+   wide screens (shown again in the max-width:720px media query), where the whole
+   pane always fits. */
+.filters-toggle {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.filters-toggle-caret {
+  font-size: 0.9em;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.filters-toggle[aria-expanded='true'] .filters-toggle-caret {
+  transform: rotate(180deg);
+}
+/* Active-filter count pill on the "Szűrők" toggle (narrow screens only, since the
+   toggle itself is hidden on wide screens). */
+.filters-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .search-row {
@@ -684,8 +721,11 @@ button:disabled {
 }
 
 /* Analysis (Elemzés) tab — monthly line chart (ECharts, SVG renderer) -------- */
-/* The Elemzés panel scrolls as one piece; a sticky search panel would slide over
-   the top of the chart, so keep it in normal flow (unlike the Adatbázis controls). */
+/* On wide screens the Elemzés panel scrolls as one piece (a sticky search panel
+   would slide over the chart), so the narratives controls stay in normal flow.
+   On narrow screens they get the same sticky + collapse + auto-hide treatment as
+   the Adatbázis controls (see the max-width:720px block); auto-hide is what keeps
+   them off the chart. */
 #analysis-controls {
   position: static;
 }
@@ -922,6 +962,10 @@ button:disabled {
   .spinner {
     animation: none;
   }
+  .controls,
+  .filters-toggle-caret {
+    transition: none;
+  }
 }
 
 /* Narrow screens ------------------------------------------------------------ */
@@ -958,5 +1002,30 @@ button:disabled {
   }
   .filter-row {
     gap: 10px;
+  }
+  /* Collapsible filter pane. Show the toggle, let the search field share its row
+     with it, and in the collapsed state pin only the search box + toggle. */
+  .filters-toggle {
+    display: inline-flex;
+  }
+  .search-field {
+    flex: 1 1 180px;
+  }
+  .controls--collapsed .accent-toggle,
+  .controls--collapsed .search-tips,
+  .controls--collapsed .filter-row {
+    display: none;
+  }
+  /* Auto-hide: slide the pane up off the top while scrolling down (JS toggles the
+     class on scroll); it returns on any upward scroll. */
+  .controls--hidden {
+    transform: translateY(calc(-100% - var(--tabbar-h) - 16px));
+  }
+  /* Elemzés narratives: opt the otherwise-static search form into the same sticky
+     pane so collapse + auto-hide apply. The shared .controls--collapsed and
+     .controls--hidden rules above already hide its secondary controls and slide it. */
+  #analysis-controls {
+    position: sticky;
+    top: var(--tabbar-h);
   }
 }
