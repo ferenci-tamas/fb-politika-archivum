@@ -1076,13 +1076,16 @@ els.analysisToggle.addEventListener('click', () => {
   setPanelExpanded(els.analysisControls, els.analysisToggle, els.analysisToggle.getAttribute('aria-expanded') !== 'true');
 });
 
-// Reveal the pane for keyboard users who tab into it while it's auto-hidden.
-els.controls.addEventListener('focusin', () => {
-  els.controls.classList.remove('controls--hidden');
-});
-els.analysisControls.addEventListener('focusin', () => {
-  els.analysisControls.classList.remove('controls--hidden');
-});
+// Reveal the pane when focus enters it (keyboard tab, or tapping a field), and hold
+// off auto-hide briefly: focusing a field can trigger a scroll-into-view that would
+// otherwise hide the pane straight away — on a date/select field that also dismisses
+// the native picker before it opens.
+function revealControlsOnFocus(controlsEl) {
+  controlsEl.classList.remove('controls--hidden');
+  autohideSuppressedUntil = performance.now() + 400;
+}
+els.controls.addEventListener('focusin', () => revealControlsOnFocus(els.controls));
+els.analysisControls.addEventListener('focusin', () => revealControlsOnFocus(els.analysisControls));
 
 // The sticky controls that auto-hide on the current view: the Adatbázis feed pane,
 // or the Elemzés narratives search pane. Other views have no sticky controls.
@@ -1105,6 +1108,9 @@ function onControlsScroll() {
   // autohideSuppressedUntil); lastScrollY stays synced so the next real scroll
   // still measures a correct delta.
   if (performance.now() < autohideSuppressedUntil) return;
+  // Never hide a pane the user is interacting with: focusing a field (date picker,
+  // select, author box) scrolls it into view, which would otherwise hide the pane.
+  if (panel.contains(document.activeElement)) return;
   if (Math.abs(dy) < 6) return; // ignore sub-pixel jitter and rubber-banding
   if (y < 72 || dy < 0) {
     panel.classList.remove('controls--hidden'); // near the top, or scrolling up
