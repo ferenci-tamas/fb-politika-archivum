@@ -4,6 +4,11 @@ dist/
 dist-ssr/
 *.local
 
+# Playwright test artifacts (browsers live in a global cache, not here)
+test-results/
+playwright-report/
+blob-report/
+
 # Local database build artifacts — these are hosted on Cloudflare R2 and must
 # never be committed (hundreds of MB). Kept locally for tests.
 archive.sqlite
