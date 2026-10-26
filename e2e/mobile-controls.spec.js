@@ -186,3 +186,21 @@ test('a selected date can be cleared via its clear button on touch', async ({ pa
   await expect(dateFrom).toHaveValue('');
   await expect(clear).toBeHidden();
 });
+
+test('an expanded pane returns collapsed after scrolling away and back', async ({ page }) => {
+  await openDatabaseTab(page);
+  const controls = page.locator('#controls');
+  await makeScrollable(page);
+
+  await page.locator('#filters-toggle').click(); // expand
+  await expect(controls).not.toHaveClass(/controls--collapsed/);
+
+  await page.waitForTimeout(500); // let the toggle grace lapse
+  await scrollWindow(page, 800);
+  await expect(controls).toHaveClass(/controls--hidden/);
+
+  await page.waitForTimeout(300); // let the collapse grace lapse
+  await scrollWindow(page, 200);
+  await expect(controls).not.toHaveClass(/controls--hidden/); // revealed
+  await expect(controls).toHaveClass(/controls--collapsed/); // ...and collapsed again
+});

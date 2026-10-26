@@ -1153,8 +1153,19 @@ function onControlsScroll() {
   if (Math.abs(dy) < 6) return; // ignore sub-pixel jitter and rubber-banding
   if (y < 72 || dy < 0) {
     panel.classList.remove('controls--hidden'); // near the top, or scrolling up
-  } else {
+  } else if (!panel.classList.contains('controls--hidden')) {
+    const wasExpanded = !panel.classList.contains('controls--collapsed');
     panel.classList.add('controls--hidden'); // scrolling down
+    if (wasExpanded) {
+      // Reset to the compact bar while it's off-screen, so the pane returns collapsed
+      // (not full-size) on scroll-up. Collapsing changes the off-screen height, so
+      // briefly suppress auto-hide to absorb the scroll-anchoring nudge that would
+      // otherwise read as a scroll-up and immediately reveal it.
+      setPanelExpanded(panel, panel === els.controls ? els.filtersToggle : els.analysisToggle, false, {
+        graceAfter: false
+      });
+      autohideSuppressedUntil = performance.now() + 250;
+    }
   }
 }
 window.addEventListener(
