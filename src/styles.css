@@ -627,16 +627,7 @@ button:disabled {
   height: 48px;
 }
 .table-wrap {
-  /* Cap the height and scroll the table inside this box so the sticky <thead>
-     pins to the top of the visible rows. Without a height cap the box grows to
-     fit every row, the page (not the box) scrolls, and the "sticky" header just
-     scrolls away with it. overflow:auto keeps the existing horizontal scroll for
-     the 900px-min table on narrow screens; overscroll-behavior stops the scroll
-     from chaining to the page once the table reaches its top/bottom. */
-  overflow: auto;
-  max-height: calc(100vh - 160px);
-  max-height: calc(100dvh - 160px);
-  overscroll-behavior: contain;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -1073,11 +1064,5 @@ button:disabled {
   #analysis-controls {
     position: sticky;
     top: var(--tabbar-h);
-  }
-  /* The controls auto-hide on scroll here, so the table box can reclaim most of
-     the viewport; keep only a small reserve for the tab bar + collapsed search
-     row (~104px). */
-  .table-wrap {
-    max-height: calc(100dvh - 104px);
   }
 }
