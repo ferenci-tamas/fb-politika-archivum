@@ -167,3 +167,19 @@ test('scrolling down closes an open author dropdown', async ({ page }) => {
   await expect(listbox).toBeHidden();
   await expect(controls).toHaveClass(/controls--hidden/);
 });
+
+test('a selected date can be cleared via its clear button on touch', async ({ page }) => {
+  await openDatabaseTab(page);
+  await page.locator('#filters-toggle').click(); // expand filters
+  const dateFrom = page.locator('#date-from');
+  const clear = page.locator('#date-from-clear');
+
+  await expect(clear).toBeHidden(); // no value yet
+  await dateFrom.fill('2020-05-01');
+  await expect(dateFrom).toHaveValue('2020-05-01');
+  await expect(clear).toBeVisible(); // appears on a coarse pointer once a value is set
+
+  await clear.click();
+  await expect(dateFrom).toHaveValue('');
+  await expect(clear).toBeHidden();
+});

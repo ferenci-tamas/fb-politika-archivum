@@ -407,6 +407,38 @@ main {
   color: var(--text);
   min-height: 38px;
 }
+/* Date field + its clear button. Native date inputs expose no clear control on
+   touch devices, so the button is shown only on coarse pointers (desktop keeps its
+   own clear). It sits beside the input, not over the native calendar icon. */
+.date-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.date-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.date-clear {
+  display: none;
+  flex: none;
+  width: 36px;
+  height: 38px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  border-radius: var(--radius);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .date-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 /* Searchable, multi-select author picker (combobox) */
 .combobox {
   position: relative;

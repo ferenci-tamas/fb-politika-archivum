@@ -130,11 +130,17 @@
             </div>
             <div class="field">
               <label for="date-from">Ettől</label>
-              <input type="date" id="date-from" name="date-from" />
+              <div class="date-field">
+                <input type="date" id="date-from" name="date-from" />
+                <button type="button" id="date-from-clear" class="date-clear" hidden aria-label="Kezdő dátum törlése">×</button>
+              </div>
             </div>
             <div class="field">
               <label for="date-to">Eddig</label>
-              <input type="date" id="date-to" name="date-to" />
+              <div class="date-field">
+                <input type="date" id="date-to" name="date-to" />
+                <button type="button" id="date-to-clear" class="date-clear" hidden aria-label="Záró dátum törlése">×</button>
+              </div>
             </div>
             <div class="field">
               <label for="sort">Rendezés</label>

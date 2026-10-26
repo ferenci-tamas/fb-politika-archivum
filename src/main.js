@@ -70,6 +70,8 @@ const els = {
   authorClear: $('author-clear'),
   dateFrom: $('date-from'),
   dateTo: $('date-to'),
+  dateFromClear: $('date-from-clear'),
+  dateToClear: $('date-to-clear'),
   sort: $('sort'),
   pageSize: $('page-size'),
   filtersClear: $('filters-clear'),
@@ -436,6 +438,13 @@ function setupDateBounds(meta) {
   els.dateTo.max = max;
 }
 
+// Show each date field's clear button only when it holds a value (the custom clear
+// is the only way to empty a native date input on touch devices).
+function updateDateClears() {
+  els.dateFromClear.hidden = els.dateFrom.value === '';
+  els.dateToClear.hidden = els.dateTo.value === '';
+}
+
 function setControlsDisabled(disabled) {
   for (const key of ['search', 'accent', 'authorInput', 'dateFrom', 'dateTo', 'sort', 'pageSize', 'filtersClear', 'searchClear']) {
     els[key].disabled = disabled;
@@ -498,6 +507,7 @@ function applyHashFiltersToState() {
   state.dateTo = v.dateTo ? dateInputToUnixEndExclusive(v.dateTo) : null;
   state.authorIds = [...new Set(v.authorNames.map((n) => authorNameToId.get(n)).filter((id) => Number.isFinite(id)))];
   if (authorPicker) authorPicker.setSelected(state.authorIds);
+  updateDateClears();
 }
 
 // --- reading controls into state --------------------------------------------
@@ -508,6 +518,7 @@ function readFiltersAndReload() {
   state.accentSensitive = els.accent.checked;
   state.sort = els.sort.value;
   state.pageSize = FEED_PAGE_SIZES.includes(Number(els.pageSize.value)) ? Number(els.pageSize.value) : DEFAULT_PAGE_SIZE;
+  updateDateClears();
   updateFilterBadge();
   send('first');
 }
@@ -544,6 +555,15 @@ els.searchClear.addEventListener('click', () => {
 els.accent.addEventListener('change', readFiltersAndReload);
 els.dateFrom.addEventListener('change', readFiltersAndReload);
 els.dateTo.addEventListener('change', readFiltersAndReload);
+
+els.dateFromClear.addEventListener('click', () => {
+  els.dateFrom.value = '';
+  readFiltersAndReload();
+});
+els.dateToClear.addEventListener('click', () => {
+  els.dateTo.value = '';
+  readFiltersAndReload();
+});
 
 // Some touch browsers (observed on Android Chrome) don't reliably open the native
 // date picker when the field is tapped, even though the input is enabled and
