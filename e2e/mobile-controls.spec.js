@@ -3,13 +3,33 @@ import { test, expect } from '@playwright/test';
 const APP_URL = 'http://localhost:5173/fb-politika-archivum/';
 
 // The real app loads its SQLite database in a Web Worker from a remote CDN. These
-// tests only exercise the mobile collapse / auto-hide UI logic, so we stub the
-// Worker (no network, fully deterministic) and then do the two things the app's
-// onReady would otherwise do once the database finished loading: hide the loading
-// overlay and enable the controls.
+// tests only exercise the mobile UI logic, so we stub the Worker: no network/DB, but
+// it emits a minimal 'ready' so the app runs its real onReady path (enables the
+// controls, wires the author combobox, sets the date bounds).
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.Worker = class {
+      set onmessage(fn) {
+        this._fn = fn;
+        setTimeout(
+          () =>
+            fn({
+              data: {
+                type: 'ready',
+                authors: [
+                  { authorId: 1, authorname: 'Teszt Szerzo', post_count: 10 },
+                  { authorId: 2, authorname: 'Masik Szerzo', post_count: 5 }
+                ],
+                meta: { min_time: 1199145600, max_time: 1750000000 }
+              }
+            }),
+          0
+        );
+      }
+      get onmessage() {
+        return this._fn;
+      }
+      set onerror(_) {}
       postMessage() {}
       terminate() {}
       addEventListener() {}
@@ -25,12 +45,9 @@ async function openDatabaseTab(page) {
   await expect(page.locator('#landing')).not.toBeEmpty(); // main.js has executed
   await page.locator('#tab-adatbazis').click();
   await expect(page.locator('#panel-adatbazis')).toBeVisible();
-  await page.evaluate(() => {
-    document.getElementById('app-loading').hidden = true;
-    document.querySelectorAll('#controls [disabled]').forEach((el) => {
-      el.disabled = false;
-    });
-  });
+  // onReady (triggered by the stub's 'ready') enables the controls and wires the
+  // combobox; waiting for the search box to enable means setup is complete.
+  await expect(page.locator('#search')).toBeEnabled();
 }
 
 // The stubbed DB renders no rows, so force the page tall enough to scroll.
@@ -132,4 +149,21 @@ test('tapping a date field requests the native picker on a touch pointer', async
   });
   await page.locator('#date-from').click();
   expect(await page.evaluate(() => window.__pickCalls)).toContain('date-from');
+});
+
+test('scrolling down closes an open author dropdown', async ({ page }) => {
+  await openDatabaseTab(page);
+  const controls = page.locator('#controls');
+  const listbox = page.locator('#author-listbox');
+  await makeScrollable(page);
+
+  await page.locator('#filters-toggle').click(); // expand filters
+  await page.locator('#author-input').click(); // open the author dropdown
+  await expect(listbox).toBeVisible();
+
+  // After the open-grace window, a deliberate page scroll dismisses the popup.
+  await page.waitForTimeout(500);
+  await scrollWindow(page, 800);
+  await expect(listbox).toBeHidden();
+  await expect(controls).toHaveClass(/controls--hidden/);
 });

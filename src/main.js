@@ -1048,11 +1048,15 @@ const narrowMQ = window.matchMedia('(max-width: 720px)');
 // window lets an explicit open/close stick.
 let autohideSuppressedUntil = 0;
 
-function setPanelExpanded(controlsEl, toggleEl, expanded) {
+function setPanelExpanded(controlsEl, toggleEl, expanded, { graceAfter = true } = {}) {
   controlsEl.classList.toggle('controls--collapsed', !expanded);
   toggleEl.setAttribute('aria-expanded', String(expanded));
   if (expanded) controlsEl.classList.remove('controls--hidden'); // never hide an open panel
-  autohideSuppressedUntil = performance.now() + 400;
+  // A user toggle changes the pane height; the scroll-anchoring nudge that follows
+  // would otherwise read as a scroll-down and hide the pane. Programmatic calls at
+  // load/hashchange pass graceAfter:false — there's no nudge to absorb then, and we
+  // shouldn't suppress the user's first genuine scroll.
+  if (graceAfter) autohideSuppressedUntil = performance.now() + 400;
 }
 
 // Count the result-narrowing filters that are active (author, date range, accent
@@ -1084,7 +1088,7 @@ function updateFilterBadge() {
 // URL) so they aren't silently hidden behind the collapsed bar; else start closed.
 function syncFiltersCollapsed() {
   updateFilterBadge();
-  setPanelExpanded(els.controls, els.filtersToggle, activeFilterCount() > 0);
+  setPanelExpanded(els.controls, els.filtersToggle, activeFilterCount() > 0, { graceAfter: false });
 }
 
 els.filtersToggle.addEventListener('click', () => {

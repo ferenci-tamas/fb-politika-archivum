@@ -39,6 +39,7 @@ export function createAuthorCombobox({ container, input, listbox, chips, clearBu
   let open = false;
   let items = [];
   let activeIndex = -1;
+  let openedAt = 0; // timestamp of the last open; lets us ignore the keyboard's scroll
 
   const optionId = (a) => `${idPrefix}${a.authorId}`;
   const emitChange = () => onChange([...selected]);
@@ -121,6 +122,7 @@ export function createAuthorCombobox({ container, input, listbox, chips, clearBu
     listbox.hidden = false;
     input.setAttribute('aria-expanded', 'true');
     open = true;
+    openedAt = performance.now();
     setActive(query.trim() && items.length ? 0 : -1);
   }
 
@@ -231,6 +233,18 @@ export function createAuthorCombobox({ container, input, listbox, chips, clearBu
     input.focus();
     emitChange();
   });
+
+  // Dismiss the popup on a deliberate page scroll (standard popup behaviour). The
+  // grace window skips the scroll the soft keyboard fires right after the field is
+  // focused, so the list doesn't flicker shut as it opens on mobile. Scrolling inside
+  // the listbox fires on the element, not the window, so browsing options is unaffected.
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (open && performance.now() - openedAt > 400) closeList();
+    },
+    { passive: true }
+  );
 
   return {
     // Set the selection programmatically (e.g. restoring from the URL) without
