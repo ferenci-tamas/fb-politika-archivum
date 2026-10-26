@@ -1028,6 +1028,11 @@ button:disabled {
     flex: 1 1 140px;
     min-width: 0;
   }
+  /* Give the date fields a full row so the clear button can't squeeze the input
+     narrow enough for the native date display to drop its year. */
+  .field--date {
+    flex-basis: 100%;
+  }
   /* Relax the wide-screen min-width so the author field can shrink. */
   .combobox {
     min-width: 0;

@@ -178,6 +178,9 @@ test('a selected date can be cleared via its clear button on touch', async ({ pa
   await dateFrom.fill('2020-05-01');
   await expect(dateFrom).toHaveValue('2020-05-01');
   await expect(clear).toBeVisible(); // appears on a coarse pointer once a value is set
+  // The input must stay wide even with the clear button present, so the native date
+  // display can't clip the year (regression guard).
+  expect((await dateFrom.boundingBox()).width).toBeGreaterThan(200);
 
   await clear.click();
   await expect(dateFrom).toHaveValue('');
