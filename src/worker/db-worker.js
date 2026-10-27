@@ -25,6 +25,7 @@ import { buildFtsMatch } from '../lib/fts-query.js';
 import { parseImages, parseLinks } from '../lib/sanitize.js';
 import * as Q from '../lib/queries.js';
 import { bucketByMonth, monthTotals } from '../lib/monthly.js';
+import { shapeTopWords } from '../lib/top-words.js';
 import { prefetchHydrationPages } from '../lib/btree.js';
 import { makeMultiRangeFetcher } from './multirange.js';
 import { BLOCK_SIZE, MULTIRANGE_PREFETCH, PREFETCH_BUDGET_MS } from '../lib/constants.js';
@@ -51,6 +52,9 @@ let manifestMonthBounds = null;
 // Unlike the boundaries these have no scan fallback, so the link-availability view is
 // only available when the manifest carries them.
 let linkMonthly = null;
+// Whether the archive has the word_monthly table (schema_version >= 3), for the
+// "Leggyakoribb szavak" view. Older archives lack it; the view then shows a notice.
+let wordsAvailable = false;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -96,9 +100,11 @@ async function init() {
     const resp = await fetch(MANIFEST_URL);
     if (!resp.ok) throw new Error(`Nem sikerült letölteni az adatbázis-leírót (HTTP ${resp.status}).`);
     const manifest = await resp.json();
-    if (manifest.schemaVersion !== 2) {
+    if (manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) {
       throw new Error(`Nem támogatott adatbázis-sémaverzió: ${manifest.schemaVersion}.`);
     }
+    // word_monthly (the "Leggyakoribb szavak" view) exists from schema_version 3.
+    wordsAvailable = manifest.schemaVersion >= 3;
     if (Array.isArray(manifest.monthBounds)) {
       manifestMonthBounds = manifest.monthBounds.map((m) => ({ ym: m.ym, lo: Number(m.lo) }));
       // Link counts (MANIFEST_FORMAT >= 3) ride on the same entries when present.
@@ -150,7 +156,7 @@ async function init() {
     authorsById = new Map(authors.map((a) => [a.authorId, a]));
     ready = true;
 
-    self.postMessage({ type: 'ready', meta, authors });
+    self.postMessage({ type: 'ready', meta, authors, wordsAvailable });
   } catch (err) {
     self.postMessage({
       type: 'init-error',
@@ -168,6 +174,7 @@ self.onmessage = (event) => {
   if (msg.type === 'prepare-monthly') return void handlePrepareMonthly();
   if (msg.type === 'activity') return void handleActivity(msg);
   if (msg.type === 'link-availability') return void handleLinkAvailability(msg);
+  if (msg.type === 'top-words') return void handleTopWords(msg);
 };
 
 async function handleQuery(msg) {
@@ -320,6 +327,47 @@ function handleLinkAvailability(msg) {
     reqId: msg.reqId,
     series: [{ label: 'Elérhetetlen linkek', points }]
   });
+}
+
+// Most frequent words for one author: the stored per-month top words (word_monthly,
+// schema_version 3), shaped into stacked-area series (the author's overall top words,
+// 0-filled across their active months). One contiguous range read of word_monthly;
+// the posts rows are never touched. `series` is null when the archive predates the
+// table (schema_version < 3) — the UI then shows a "needs a rebuild" notice.
+function handleTopWords(msg) {
+  if (!ready) {
+    self.postMessage({ type: 'top-words-error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
+    return;
+  }
+  if (!wordsAvailable) {
+    self.postMessage({ type: 'top-words-result', reqId: msg.reqId, series: null });
+    return;
+  }
+  try {
+    vfs.clearLastError();
+    const beforeBytes = vfs.getStats().bytesFetched;
+    const authorId = Number(msg.authorId);
+    if (!Number.isFinite(authorId)) {
+      self.postMessage({ type: 'top-words-result', reqId: msg.reqId, series: [], fetchedBytes: 0 });
+      return;
+    }
+    const rows = Q.topWordsByAuthor(db, authorId);
+    const { series } = shapeTopWords(rows, msg.limit || 20);
+    self.postMessage({
+      type: 'top-words-result',
+      reqId: msg.reqId,
+      series,
+      fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
+    });
+  } catch (err) {
+    const vfsErr = vfs && vfs.getLastError();
+    self.postMessage({
+      type: 'top-words-error',
+      reqId: msg.reqId,
+      kind: (vfsErr && vfsErr.kind) || (err && err.kind),
+      message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
+    });
+  }
 }
 
 // Monthly post-count histogram for a search: bucket the matching FTS rowids into

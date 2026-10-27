@@ -1,6 +1,8 @@
 library(data.table)
 library(DBI)
 library(RSQLite)
+library(udpipe)
+library(stopwords)
 
 ###############################################################################
 # 0. CONFIGURATION
@@ -46,8 +48,9 @@ FTS5_REQUIRED_VERSION <- 4L
 # clustered child rowids. 2: as 1, but the rowids of posts, links and images are
 # an explicit column (id INTEGER PRIMARY KEY), and every post also carries its
 # images and links as JSON (posts.images, posts.links), so one query hydrates a
-# page.
-SCHEMA_VERSION <- 2L
+# page. 3: as 2, plus a word_monthly table -- the top words per author and
+# year-month (section 3b) -- for the website's "Leggyakoribb szavak" view.
+SCHEMA_VERSION <- 3L
 
 # "format" of the parts manifest (manifest.json and latest.json, section 15).
 # It describes how the archive is split, not what is in it, so it is versioned
@@ -70,6 +73,18 @@ MANIFEST_FORMAT <- 3L
 TEST_SEARCH_TERM <- "az"
 TEST_DIACRITIC_TERMS <- c("kormány", "kormany")
 TEST_LIMIT <- 100L
+
+# Top-words view (schema_version 3): the TOP_WORDS_N most frequent content words
+# per author and year-month, as udpipe lemmas (section 3b). The Hungarian model is
+# downloaded to UDPIPE_MODEL_DIR on first use. Tagging the whole corpus is the slow
+# step and is never cached: it runs fresh every build, in WORD_CHUNK_SIZE-post
+# chunks across WORD_CORES PSOCK workers.
+TOP_WORDS_N <- 20L
+UDPIPE_LANGUAGE <- "hungarian-szeged"
+UDPIPE_MODEL_DIR <- file.path(dirname(OUTPUT_FILE), "udpipe-models")
+STOPWORDS_SOURCE <- "stopwords-iso"
+WORD_CHUNK_SIZE <- 8000L
+WORD_CORES <- max(1L, parallel::detectCores() - 1L)
 
 ###############################################################################
 # 1. INPUT
@@ -156,6 +171,82 @@ authors <- merge(authors, posts[, .(post_count = .N, first_time = min(time), las
 cat("authors: ", nrow(authors), " (including ", sum(is.na(authors$authorname)), " unknown-author row)\n", sep = "")
 
 ###############################################################################
+# 3b. TOP WORDS PER MONTH AND AUTHOR
+#
+# For every author x year-month, the TOP_WORDS_N most frequent content words of
+# that month's posts (ties at the cut are kept, so a cell may hold a few more).
+# Words are udpipe lemmas from the Hungarian model, so inflected forms collapse to
+# one entry ("Magyarorszagot", "Magyarorszagon", ... -> "Magyarorszag"). URLs and
+# #hashtags are stripped first; then punctuation, symbols, emoji (anything without
+# a letter), numbers, single characters and Hungarian stopwords are dropped. Counts
+# are raw. The whole corpus is re-tagged on every build (no cache). The result is
+# loaded into word_monthly like any other table (sections 5-7).
+###############################################################################
+
+stopwords_hu <- stringi::stri_trans_nfc(stopwords::stopwords("hu", source = STOPWORDS_SOURCE))
+drop_upos <- c("PUNCT", "SYM", "NUM", "X")
+
+ud_model_file <- local({
+  dir.create(UDPIPE_MODEL_DIR, showWarnings = FALSE, recursive = TRUE)
+  found <- list.files(UDPIPE_MODEL_DIR, pattern = sprintf("^%s.*\\.udpipe$", UDPIPE_LANGUAGE), full.names = TRUE)
+  if (length(found)) return(found[[1]])
+  dl <- udpipe::udpipe_download_model(language = UDPIPE_LANGUAGE, model_dir = UDPIPE_MODEL_DIR)
+  if (!nzchar(dl$file_model) || !file.exists(dl$file_model)) stop("Could not obtain the udpipe model: ", dl$download_message)
+  dl$file_model
+})
+cat("udpipe model: ", basename(ud_model_file), "\n", sep = "")
+
+# One row per post with text; doc_id ties udpipe's output back to author and month.
+word_docs <- posts[!is.na(text) & nzchar(trimws(text)),
+  .(doc_id = as.character(.I), authorId, ym = format(as.POSIXct(time, tz = "UTC"), "%Y-%m"), text)]
+
+# Tokenize + tag + lemmatize one chunk of posts, then drop non-content tokens and
+# return raw (authorId, ym, word) counts. Self-contained so it also runs inside a
+# PSOCK worker, where only the exported objects and attached packages exist.
+tag_chunk <- function(rows) {
+  model <- udpipe::udpipe_load_model(ud_model_file)
+  clean <- stringi::stri_replace_all_regex(rows$text, "https?://\\S+|www\\.\\S+", " ")
+  clean <- stringi::stri_replace_all_regex(clean, "#\\S+", " ")
+  ann <- data.table::as.data.table(udpipe::udpipe_annotate(
+    model, x = clean, doc_id = rows$doc_id, tokenizer = "tokenizer", tagger = "default", parser = "none"))
+  empty <- data.table::data.table(authorId = integer(), ym = character(), word = character(), n = integer())
+  if (!nrow(ann)) return(empty)
+  ann <- ann[!is.na(lemma) & !upos %chin% drop_upos &
+    stringi::stri_detect_regex(lemma, "\\p{L}") &
+    nchar(lemma) > 1L &
+    !stringi::stri_detect_regex(lemma, "[0-9]") &
+    !stringi::stri_trans_tolower(lemma) %chin% stopwords_hu]
+  if (!nrow(ann)) return(empty)
+  rows[, .(doc_id, authorId, ym)][ann[, .(doc_id, lemma)], on = "doc_id", nomatch = 0L][
+    , .(n = .N), by = .(authorId, ym, word = lemma)]
+}
+
+chunks <- unname(split(word_docs, (seq_len(nrow(word_docs)) - 1L) %/% WORD_CHUNK_SIZE))
+cat("tagging ", nrow(word_docs), " posts in ", length(chunks), " chunks on ", WORD_CORES, " core(s)\n", sep = "")
+word_elapsed <- system.time(
+  if (WORD_CORES > 1L) {
+    cl <- parallel::makeCluster(WORD_CORES)
+    word_parts <- tryCatch({
+      parallel::clusterExport(cl, c("ud_model_file", "drop_upos", "stopwords_hu"))
+      parallel::clusterEvalQ(cl, { library(data.table); library(udpipe); library(stringi) })
+      parallel::parLapply(cl, chunks, tag_chunk)
+    }, finally = parallel::stopCluster(cl))
+  } else {
+    word_parts <- lapply(chunks, tag_chunk)
+  }
+)["elapsed"]
+cat("tagging done in ", round(word_elapsed), "s\n", sep = "")
+
+word_counts <- rbindlist(word_parts)[, .(n = sum(n)), by = .(authorId, ym, word)]
+# Top TOP_WORDS_N per author-month; ties.method "min" keeps every word tied with the
+# cut, so a cell may hold more than TOP_WORDS_N rows (never fewer than it has words).
+word_counts[, rnk := frank(-n, ties.method = "min"), by = .(authorId, ym)]
+word_monthly <- word_counts[rnk <= TOP_WORDS_N, .(authorId, ym, word, n)][order(authorId, ym, -n, word)]
+cat("word_monthly: ", nrow(word_monthly), " rows across ",
+  uniqueN(word_monthly[, .(authorId, ym)]), " author-months\n", sep = "")
+rm(stopwords_hu, word_docs, chunks, word_parts, word_counts)
+
+###############################################################################
 # 4. CHILD-ROW STRIDES
 #
 # Links/images of the post with rowid r get rowids [r * stride, (r + 1) * stride).
@@ -195,11 +286,13 @@ dbExecute(stage, "CREATE TABLE posts (postId TEXT, authorId INTEGER, url TEXT, t
 dbExecute(stage, "CREATE TABLE links (postId TEXT, link TEXT, available INTEGER)")
 dbExecute(stage, "CREATE TABLE images (postId TEXT, filename TEXT)")
 dbExecute(stage, "CREATE TABLE authors (authorId INTEGER, authorname TEXT, post_count INTEGER, first_time INTEGER, last_time INTEGER)")
+dbExecute(stage, "CREATE TABLE word_monthly (authorId INTEGER, ym TEXT, word TEXT, n INTEGER)")
 dbWithTransaction(stage, {
   dbAppendTable(stage, "authors", authors)
   dbAppendTable(stage, "posts", posts)
   dbAppendTable(stage, "links", links)
   dbAppendTable(stage, "images", images)
+  dbAppendTable(stage, "word_monthly", word_monthly)
 })
 dbDisconnect(stage)
 
@@ -288,6 +381,19 @@ dbExecute(con, "
   )"
 )
 
+# Top words per author and year-month (schema_version 3). WITHOUT ROWID so the rows
+# cluster by (authorId, ym, word): one author's whole history is a single contiguous
+# range read in the browser. word is a udpipe lemma; n is a raw (positive) count.
+dbExecute(con, "
+  CREATE TABLE word_monthly (
+      authorId INTEGER NOT NULL REFERENCES authors(authorId),
+      ym       TEXT NOT NULL,
+      word     TEXT NOT NULL,
+      n        INTEGER NOT NULL CHECK (n > 0),
+      PRIMARY KEY (authorId, ym, word)
+  ) WITHOUT ROWID"
+)
+
 dbExecute(con, "CREATE TABLE archive_meta (key TEXT NOT NULL PRIMARY KEY, value) WITHOUT ROWID")
 
 # The page size is fixed once the first table exists. SQLite ignores an invalid
@@ -305,6 +411,15 @@ dbExecute(con, "
   SELECT authorId, authorname, post_count, first_time, last_time
   FROM stage.authors
   ORDER BY authorId"
+)
+
+# Fills the WITHOUT ROWID b-tree in (authorId, ym, word) key order. Foreign keys are
+# still OFF here; word_monthly.authorId is covered by PRAGMA foreign_key_check (11).
+dbExecute(con, "
+  INSERT INTO word_monthly (authorId, ym, word, n)
+  SELECT authorId, ym, word, n
+  FROM stage.word_monthly
+  ORDER BY authorId, ym, word"
 )
 
 # The JSON is built from the staging tables in staging (= input) order, the
@@ -536,6 +651,16 @@ check(scalar("
      OR a.last_time IS NOT (SELECT max(time) FROM posts AS p WHERE p.authorId = a.authorId)") == 0,
   "author statistics match posts")
 
+# Equal counts + unique (authorId, ym, word): an empty one-way EXCEPT means identical.
+check(scalar("SELECT count(*) FROM word_monthly") == nrow(word_monthly) &&
+  scalar("
+    SELECT count(*) FROM (
+      SELECT authorId, ym, word, n FROM stage.word_monthly
+      EXCEPT SELECT authorId, ym, word, n FROM main.word_monthly)") == 0,
+  "word_monthly identical to the input")
+check(scalar("SELECT count(*) FROM word_monthly WHERE authorId NOT IN (SELECT authorId FROM authors)") == 0,
+  "every word_monthly row has a known author")
+
 # id must be the rowid alias (the only primary key column, declared INTEGER) in
 # posts, links and images, so that no copy of the file can renumber the rows.
 check(scalar("
@@ -610,6 +735,11 @@ authors_top <- dbGetQuery(con, "SELECT authorId, authorname, post_count FROM aut
 cat("\nauthors: ", nrow(authors_top), "\n", sep = "")
 print(head(authors_top, 10))
 test_author <- authors_top$authorId[1]
+
+cat("\n## Top words of ", authors_top$authorname[1], " (word_monthly, schema_version 3)\n", sep = "")
+print(dbGetQuery(con, "
+  SELECT ym, word, n FROM word_monthly
+  WHERE authorId = ? ORDER BY n DESC, ym LIMIT 10", params = list(test_author)))
 
 first_year <- as.integer(format(as.POSIXct(min(posts$time), tz = "UTC"), "%Y"))
 date_start <- as.numeric(as.POSIXct(sprintf("%d-01-01", first_year), tz = "UTC"))
@@ -743,6 +873,7 @@ for (x in list(
   list("links", "id, postId, link, available"),
   list("images", "id, postId, filename"),
   list("authors", "authorId, authorname, post_count, first_time, last_time"),
+  list("word_monthly", "authorId, ym, word, n"),
   list("archive_meta", "key, value")
 )) {
   check(scalar(sprintf("SELECT (SELECT count(*) FROM main.%1$s) = (SELECT count(*) FROM compact.%1$s)", x[[1]])) == 1 &&

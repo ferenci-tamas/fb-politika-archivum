@@ -101,14 +101,15 @@ Key decisions:
 ## 2. SQLite schema
 
 The database is produced by [`SQLite-converter.R`](SQLite-converter.R) (schema
-version 2). Summary:
+version 3). Summary:
 
 | Table | Columns | Notes |
 |---|---|---|
 | `posts` | `id INTEGER PRIMARY KEY`, `postId TEXT`, `authorId INTEGER`, `url TEXT`, `time INTEGER`, `text TEXT`, `images TEXT`, `links TEXT` | `id` is 1..N in `(time, postId)` order. `images` = JSON `["name", …]`; `links` = JSON `[["url", 0\|1], …]`; both `NULL` when empty. |
 | `links` | `id`, `postId`, `link`, `available` | Normalized 1:N; `id` clustered in the post's rowid range. |
 | `images` | `id`, `postId`, `filename` | Normalized 1:N; clustered likewise. |
-| `authors` | `authorId`, `authorname`, `post_count`, `first_time`, `last_time` | 106 rows, `authorId` in Hungarian alphabetical order; precomputed stats. |
+| `authors` | `authorId`, `authorname`, `post_count`, `first_time`, `last_time` | `authorId` in Hungarian alphabetical order; precomputed stats. |
+| `word_monthly` | `authorId`, `ym`, `word`, `n` | *(schema 3)* Per author and `YYYY-MM`, that month's top ~20 content words (udpipe lemmas) with raw counts `n`; boundary ties may add a few. `WITHOUT ROWID`, keyed `(authorId, ym, word)` so one author is a single range read. Powers the **Leggyakoribb szavak** view. |
 | `archive_meta` | `key`, `value` | `post_count`, `min_id`/`max_id`, `min_time`/`max_time`, strides, `schema_version`, … |
 
 Indexes: `idx_posts_postId` (unique), `idx_posts_time`, `idx_posts_author_time
@@ -182,7 +183,7 @@ what is in it. Clients treat unknown fields as optional.
 | Field | Meaning |
 |---|---|
 | `format` | Manifest format version (`2`). |
-| `schemaVersion` | The archive's `schema_version` (`2`), so a client can reject an archive it cannot read before fetching any data. |
+| `schemaVersion` | The archive's `schema_version` (`3`), so a client can reject an archive it cannot read before fetching any data. |
 | `builtAt` | Build id; also the folder name under `/database/`. |
 | `file` | Archive filename (for tooling that reassembles the parts). |
 | `size`, `md5` | Byte size and MD5 of the whole archive. |

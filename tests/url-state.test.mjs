@@ -123,3 +123,23 @@ test('analysis links sub-view round-trips with no parameters', () => {
   assert.equal(encodeAnalysisToHash({ view: 'links' }), 'view=links');
   assert.equal(decodeHashToAnalysis('#tab=elemzes&view=links').view, 'links');
 });
+
+test('words sub-view round-trips a single author by name', () => {
+  const hash = encodeAnalysisToHash({ view: 'words', authorNames: ['Orbán Viktor'] });
+  const p = new URLSearchParams(hash);
+  assert.equal(p.get('view'), 'words');
+  assert.deepEqual(p.getAll('author'), ['Orbán Viktor']);
+  const back = decodeHashToAnalysis('#tab=elemzes&' + hash);
+  assert.equal(back.view, 'words');
+  assert.deepEqual(back.authorNames, ['Orbán Viktor']);
+});
+
+test('words sub-view carries only the first non-blank author', () => {
+  const hash = encodeAnalysisToHash({ view: 'words', authorNames: ['  ', 'Áder János'] });
+  assert.deepEqual(new URLSearchParams(hash).getAll('author'), ['Áder János']);
+});
+
+test('words sub-view with no author is just the sub-view', () => {
+  assert.equal(encodeAnalysisToHash({ view: 'words', authorNames: [] }), 'view=words');
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&view=words').view, 'words');
+});

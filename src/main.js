@@ -60,6 +60,10 @@ const els = {
   activityAuthorChips: $('activity-author-chips'),
   activityAuthorClear: $('activity-author-clear'),
   activityRatio: $('activity-ratio'),
+  elemzesWords: $('elemzes-words'),
+  wordsAuthor: $('words-author'),
+  wordsStatus: $('words-status'),
+  wordsChart: $('words-chart'),
   search: $('search'),
   searchClear: $('search-clear'),
   accent: $('accent'),
@@ -168,6 +172,12 @@ function initDatabase() {
       case 'link-availability-result':
         if (msg.reqId === linkReqId) onLinkResult(msg);
         break;
+      case 'top-words-result':
+        if (msg.reqId === wordsReqId) onWordsResult(msg);
+        break;
+      case 'top-words-error':
+        if (msg.reqId === wordsReqId) onWordsError(msg);
+        break;
       default:
         break;
     }
@@ -225,6 +235,8 @@ function onReady(msg) {
   state.ready = true;
   authorIdToName = new Map(msg.authors.map((a) => [a.authorId, a.authorname]));
   authorNameToId = new Map(msg.authors.map((a) => [a.authorname, a.authorId]));
+  wordsAvailable = !!msg.wordsAvailable;
+  populateWordsAuthors(msg.authors);
   authorPicker = createAuthorCombobox({
     container: els.authorCombobox,
     input: els.authorInput,
@@ -261,6 +273,7 @@ function onReady(msg) {
   applyHashFiltersToState(); // restore filters/search from a shared or bookmarked URL
   syncFiltersCollapsed(); // open the mobile filter section if the URL carried any filter
   restoreActivityAuthorsFromHash(); // restore the Elemzés activity author selection, if any
+  restoreWordsAuthorFromHash(); // restore the Elemzés top-words author selection, if any
   runFirstQueryIfNeeded(); // only queries if the Adatbázis tab is already showing
   if (activeTab === 'elemzes') showElemzesView(elemzesView); // run the current sub-view
 }
@@ -473,12 +486,18 @@ function updateHash() {
     );
     body = query ? `tab=adatbazis&${query}` : 'tab=adatbazis';
   } else if (activeTab === 'elemzes') {
+    const authorNames =
+      elemzesView === 'activity'
+        ? activityAuthorIds.map((id) => authorIdToName.get(id)).filter(Boolean)
+        : elemzesView === 'words' && wordsAuthorId != null
+          ? [authorIdToName.get(wordsAuthorId)].filter(Boolean)
+          : [];
     const query = encodeAnalysisToHash({
       view: elemzesView,
       phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
       accentSensitive: els.analysisAccent.checked,
       ratio: elemzesView === 'activity' ? els.activityRatio.checked : els.analysisRatio.checked,
-      authorNames: activityAuthorIds.map((id) => authorIdToName.get(id)).filter(Boolean)
+      authorNames
     });
     body = query ? `tab=elemzes&${query}` : 'tab=elemzes';
   }
@@ -631,6 +650,10 @@ let activityAuthorPicker = null;
 let lastActivity = null; // cached { key, series } for the current author selection
 let linkReqId = 0;
 let lastLink = null; // cached { series } for the link-availability view (static per session)
+let wordsReqId = 0;
+let wordsAuthorId = null; // single selected author for the top-words view, or null
+let lastWords = null; // cached { authorId, series } for the current author selection
+let wordsAvailable = false; // set from the 'ready' message (word_monthly, schema_version >= 3)
 
 function addPhraseRow(value = '') {
   if (els.analysisPhrases.querySelectorAll('.analysis-phrase-row').length >= MAX_PHRASES) return null;
@@ -820,15 +843,17 @@ function setElemzesMenuOpen(open) {
 // Show one sub-view ('activity' | 'narratives' | 'links') and run it. Called from
 // setActiveTab.
 function showElemzesView(view) {
-  elemzesView = view === 'activity' ? 'activity' : view === 'links' ? 'links' : 'narratives';
+  elemzesView = view === 'activity' ? 'activity' : view === 'links' ? 'links' : view === 'words' ? 'words' : 'narratives';
   els.elemzesActivity.hidden = elemzesView !== 'activity';
   els.elemzesNarratives.hidden = elemzesView !== 'narratives';
   els.elemzesLinks.hidden = elemzesView !== 'links';
+  els.elemzesWords.hidden = elemzesView !== 'words';
   for (const item of els.elemzesMenu.querySelectorAll('.tab-menu-item')) {
     item.setAttribute('aria-current', String(item.dataset.view === elemzesView));
   }
   if (elemzesView === 'activity') prepareActivity();
   else if (elemzesView === 'links') prepareLinks();
+  else if (elemzesView === 'words') prepareWords();
   else {
     els.analysisControls.classList.remove('controls--hidden'); // reveal the pane when (re)entering narratives
     prepareAnalysis();
@@ -949,6 +974,113 @@ function drawLinkChart() {
   });
 }
 
+// --- Elemzés: "Leggyakoribb szavak" sub-view --------------------------------
+// One author's most frequent words (word_monthly, schema_version 3) as a stacked
+// area chart. A native <select> picks a single author; the worker returns the
+// author's overall top-20 words as 0-filled monthly series. Cached per author.
+function populateWordsAuthors(authors) {
+  const frag = document.createDocumentFragment();
+  for (const a of authors) {
+    const opt = document.createElement('option');
+    opt.value = String(a.authorId);
+    opt.textContent = a.authorname;
+    frag.append(opt);
+  }
+  els.wordsAuthor.append(frag);
+}
+
+function prepareWords() {
+  if (!state.ready) {
+    els.wordsStatus.textContent = 'Az adatbázis betöltése folyamatban…';
+    return; // onReady re-invokes showElemzesView once the DB is ready
+  }
+  if (!wordsAvailable) {
+    // The archive predates word_monthly (schema_version < 3): nothing to show.
+    wordsReqId += 1;
+    lastWords = null;
+    els.wordsStatus.textContent = 'Ehhez a nézethez frissített adatbázis szükséges — a szógyakoriságok még nincsenek az archívumban.';
+    els.wordsChart.replaceChildren();
+    return;
+  }
+  if (wordsAuthorId == null) {
+    wordsReqId += 1; // invalidate any in-flight response
+    lastWords = null;
+    els.wordsStatus.textContent = 'Válassz egy szerzőt a leggyakoribb szavak megjelenítéséhez.';
+    els.wordsChart.replaceChildren();
+    return;
+  }
+  if (lastWords && lastWords.authorId === wordsAuthorId) {
+    drawWordsChart(); // same author — re-render the cached result
+    return;
+  }
+  runWords();
+}
+
+function runWords() {
+  updateHash(); // keep the shareable URL in sync with the author selection
+  wordsReqId += 1;
+  els.wordsStatus.textContent = 'Számítás…';
+  const loading = el('div', { class: 'chart-loading', 'aria-hidden': 'true' }, el('div', { class: 'spinner' }));
+  els.wordsChart.replaceChildren(loading);
+  worker.postMessage({ type: 'top-words', reqId: wordsReqId, authorId: wordsAuthorId });
+}
+
+function onWordsResult(msg) {
+  if (msg.series === null) {
+    // The archive predates word_monthly (schema_version < 3): no data to show.
+    lastWords = null;
+    els.wordsStatus.textContent = 'Ehhez a nézethez frissített adatbázis szükséges — a szógyakoriságok még nincsenek az archívumban.';
+    els.wordsChart.replaceChildren();
+    return;
+  }
+  lastWords = { authorId: wordsAuthorId, series: msg.series };
+  drawWordsChart();
+}
+
+function drawWordsChart() {
+  if (!lastWords) return;
+  const series = lastWords.series;
+  const name = authorIdToName.get(lastWords.authorId) || '';
+  if (!series.length) {
+    els.wordsStatus.textContent = `${name}: nincs megjeleníthető szó.`;
+    els.wordsChart.replaceChildren();
+    return;
+  }
+  els.wordsStatus.textContent = `${name} — ${series.length} leggyakoribb szó`;
+  renderLineChart(els.wordsChart, series, {
+    mode: 'count',
+    stack: true,
+    title: `${name} leggyakoribb szavai havonta`,
+    subtitle: '(a szerző összességében leggyakoribb szavai, havi előfordulás)',
+    ariaLabel: `${name} leggyakrabban használt szavainak havi előfordulása, egymásra rétegzett területdiagramon`
+  });
+}
+
+function onWordsError(msg) {
+  els.wordsStatus.textContent = formatErrorMessage(msg);
+  els.wordsChart.replaceChildren();
+}
+
+els.wordsAuthor.addEventListener('change', () => {
+  const v = els.wordsAuthor.value;
+  const id = Number(v);
+  wordsAuthorId = v !== '' && Number.isFinite(id) ? id : null;
+  lastWords = null; // selection changed — refetch
+  prepareWords();
+});
+
+// Restore the top-words sub-view's author from an Elemzés deep link. Authors travel
+// by NAME (stable across rebuilds), so this needs the author maps: it runs from
+// onReady and on hashchange, never at module load.
+function restoreWordsAuthorFromHash() {
+  const onElemzes = new URLSearchParams(location.hash.replace(/^#/, '')).get('tab') === 'elemzes';
+  const a = onElemzes ? decodeHashToAnalysis(location.hash) : { view: 'narratives', authorNames: [] };
+  const name = a.view === 'words' ? (a.authorNames[0] || null) : null;
+  const id = name != null ? authorNameToId.get(name) : null;
+  wordsAuthorId = Number.isFinite(id) ? id : null;
+  if (els.wordsAuthor) els.wordsAuthor.value = wordsAuthorId == null ? '' : String(wordsAuthorId);
+}
+
 // The Elemzés tab button opens a menu to choose the sub-view (rather than switching
 // directly); picking an item activates the tab with that view.
 els.tabElemzes.addEventListener('click', (e) => {
@@ -968,7 +1100,7 @@ els.elemzesMenu.addEventListener('click', (e) => {
   const item = e.target.closest('.tab-menu-item');
   if (!item) return;
   setElemzesMenuOpen(false);
-  elemzesView = item.dataset.view === 'activity' ? 'activity' : item.dataset.view === 'links' ? 'links' : 'narratives';
+  elemzesView = item.dataset.view === 'activity' ? 'activity' : item.dataset.view === 'links' ? 'links' : item.dataset.view === 'words' ? 'words' : 'narratives';
   setActiveTab('elemzes'); // shows the sub-view + updates the hash
   els.tabElemzes.focus();
 });
@@ -1001,7 +1133,7 @@ function applyHashAnalysisToState() {
   const a = onElemzes
     ? decodeHashToAnalysis(location.hash)
     : { view: 'narratives', phrases: [], accentSensitive: false, ratio: true };
-  elemzesView = a.view === 'activity' ? 'activity' : a.view === 'links' ? 'links' : 'narratives';
+  elemzesView = a.view === 'activity' ? 'activity' : a.view === 'links' ? 'links' : a.view === 'words' ? 'words' : 'narratives';
   els.analysisAccent.checked = a.accentSensitive;
   // Route the decoded ratio to its sub-view; the other sub-view keeps its default.
   if (a.view === 'activity') {
@@ -1258,6 +1390,7 @@ window.addEventListener('hashchange', () => {
   if (tab === 'elemzes') {
     applyHashAnalysisToState();
     restoreActivityAuthorsFromHash();
+    restoreWordsAuthorFromHash();
   }
   setActiveTab(tab, { updateUrl: false });
   if (tab === 'adatbazis' && state.ready) send('first');

@@ -19,6 +19,15 @@ const SAVE_ICON = 'path://M4.7,22.9L29.3,45.5L54.7,23.4M4.6,43.6L4.6,58L53.8,58L
 // the light and dark surfaces. ECharts cycles it if there are more series.
 const COLORS = ['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#E69F00', '#56B4E9', '#8E44AD', '#999999'];
 
+// A 20-colour categorical palette (d3 category20) for the stacked "Leggyakoribb
+// szavak" view, where up to 20 word series share one chart. ECharts cycles it if
+// there are more series.
+const STACK_COLORS = [
+  '#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c', '#98df8a', '#d62728', '#ff9896',
+  '#9467bd', '#c5b0d5', '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f', '#c7c7c7',
+  '#bcbd22', '#dbdb8d', '#17becf', '#9edae5'
+];
+
 // Reserve a strip above the plot for the toolbox (download) button, pinned top-right, so
 // hovering it stays above the coordinate area and never triggers the axis-pointer dashed
 // line. The icon is the binding constraint, so single-series charts need the same height
@@ -63,7 +72,7 @@ function escHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function buildOption(series, ariaLabel, mode) {
+function buildOption(series, ariaLabel, mode, stack) {
   const muted = cssVar('--muted', '#5b636e');
   const border = cssVar('--border', '#d4d8de');
   const surface = cssVar('--surface', '#ffffff');
@@ -71,7 +80,7 @@ function buildOption(series, ariaLabel, mode) {
   const ratio = mode === 'ratio';
   return {
     aria: { enabled: true, label: { enabled: true, description: ariaLabel } },
-    color: COLORS,
+    color: stack ? STACK_COLORS : COLORS,
     legend: {
       show: series.length > 1, // a single curve needs no legend
       type: 'scroll',
@@ -94,7 +103,15 @@ function buildOption(series, ariaLabel, mode) {
         const d = new Date(anchor.value[0]);
         const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
         let html = `<strong>${ym}</strong>`;
-        for (const p of arr) {
+        let items = arr;
+        if (stack) {
+          // Many stacked series: lead with the month's total, then list only the
+          // words present this month, most frequent first, to keep the tooltip short.
+          const sum = arr.reduce((s, p) => s + (p.data ? p.data.n : 0), 0);
+          html += ` — ${formatCount(sum)}`;
+          items = arr.filter((p) => p.data && p.data.n > 0).sort((a, b) => b.data.n - a.data.n);
+        }
+        for (const p of items) {
           const { n, total } = p.data;
           let val;
           if (ratio) {
@@ -137,7 +154,8 @@ function buildOption(series, ariaLabel, mode) {
       data: toSeriesData(s.points, mode),
       showSymbol: false,
       connectNulls: false,
-      lineStyle: { width: 2 }
+      lineStyle: { width: stack ? 1 : 2 },
+      ...(stack ? { stack: 'total', areaStyle: {}, emphasis: { focus: 'series' } } : {})
     }))
   };
 }
@@ -243,7 +261,7 @@ export function preloadChart() {
  * @param {{label:string, points:{ym:string,n:number,total:number}[]}[]} series
  * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
  */
-export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '' } = {}) {
+export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '', stack = false } = {}) {
   if (!container) return;
   disposeChart();
   if (!series || series.length === 0) {
@@ -251,7 +269,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     clear(container);
     return;
   }
-  last = { container, series, ariaLabel, mode, title, subtitle };
+  last = { container, series, ariaLabel, mode, title, subtitle, stack };
 
   let echarts;
   try {
@@ -272,7 +290,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     if (ariaLabel) host.setAttribute('aria-label', ariaLabel);
     container.append(host);
     chartInstance = echarts.init(host, null, { renderer: 'canvas', locale: 'HU' });
-    chartInstance.setOption(buildOption(series, ariaLabel, mode), true);
+    chartInstance.setOption(buildOption(series, ariaLabel, mode, stack), true);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');
   }
@@ -291,7 +309,7 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle });
+      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle, stack: last.stack });
     });
   }
 }

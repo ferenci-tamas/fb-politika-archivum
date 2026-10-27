@@ -83,6 +83,13 @@ export function encodeAnalysisToHash(v) {
     p.set('view', 'links');
     return p.toString();
   }
+  // The "Leggyakoribb szavak" sub-view carries a single author (by name).
+  if (v.view === 'words') {
+    p.set('view', 'words');
+    const name = (v.authorNames || []).find((x) => x && x.trim() !== '');
+    if (name) p.append('author', name);
+    return p.toString();
+  }
   // narratives (the default sub-view): one or more phrases plus the toggles.
   for (const phrase of v.phrases || []) {
     if (phrase && phrase.trim() !== '') p.append('q', phrase.trim());
@@ -100,7 +107,8 @@ export function encodeAnalysisToHash(v) {
 export function decodeHashToAnalysis(hash) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
   const rawView = p.get('view');
-  const view = rawView === 'activity' ? 'activity' : rawView === 'links' ? 'links' : 'narratives';
+  const view =
+    rawView === 'activity' ? 'activity' : rawView === 'links' ? 'links' : rawView === 'words' ? 'words' : 'narratives';
   return {
     view,
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),

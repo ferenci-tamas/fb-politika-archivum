@@ -49,6 +49,7 @@
           <button type="button" class="tab-menu-item" role="menuitem" data-view="activity">Posztolási aktivitás időben</button>
           <button type="button" class="tab-menu-item" role="menuitem" data-view="narratives">Narratívák alakulása időben</button>
           <button type="button" class="tab-menu-item" role="menuitem" data-view="links">Link-avulási statisztika</button>
+          <button type="button" class="tab-menu-item" role="menuitem" data-view="words">Leggyakoribb szavak</button>
         </div>
       </div>
     </div>
@@ -319,6 +320,28 @@
             <span id="links-status" class="result-count" aria-live="polite"></span>
           </div>
           <div id="links-chart" class="analysis-chart" aria-live="polite"></div>
+        </div>
+
+        <div id="elemzes-words" class="elemzes-view" hidden>
+          <h2 class="elemzes-view-title">Leggyakoribb szavak</h2>
+          <p class="analysis-hint">
+            Egy kiválasztott szerző leggyakrabban használt szavai havi bontásban, egymásra rétegzett
+            területdiagramon. A szavak lemmatizálva vannak (a ragozott alakok a szótövükhöz számítanak),
+            a gyakori funkciószavak (névelők, kötőszavak stb.), számok és írásjelek nélkül. Az ábra a
+            szerző összességében leggyakoribb 20 szavát mutatja.
+          </p>
+          <div class="activity-controls">
+            <div class="field">
+              <label for="words-author">Szerző</label>
+              <select id="words-author">
+                <option value="" selected>Válassz szerzőt…</option>
+              </select>
+            </div>
+          </div>
+          <div class="status-bar">
+            <span id="words-status" class="result-count" aria-live="polite"></span>
+          </div>
+          <div id="words-chart" class="analysis-chart" aria-live="polite"></div>
         </div>
       </section>
     </main>

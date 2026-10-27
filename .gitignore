@@ -16,6 +16,9 @@ archive.sqlite-*
 archive-parts/
 toconvert.rds
 
+# udpipe model(s) downloaded by SQLite-converter.R for the top-words view.
+udpipe-models/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

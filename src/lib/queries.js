@@ -358,3 +358,16 @@ export function monthlyByAuthor(db, authorId) {
     )
     .map((r) => ({ ym: r.ym, n: Number(r.n) }));
 }
+
+// --- top words per author (Leggyakoribb szavak) -----------------------------
+/**
+ * One author's stored monthly top words (word_monthly, schema_version >= 3),
+ * ascending by month then descending by count. word_monthly is WITHOUT ROWID,
+ * clustered by (authorId, ym, word), so a single author is one contiguous range
+ * read — the posts rows are never touched. The caller shapes these into series.
+ */
+export function topWordsByAuthor(db, authorId) {
+  return db
+    .selectObjects('SELECT ym, word, n FROM word_monthly WHERE authorId = ? ORDER BY ym, n DESC', [authorId])
+    .map((r) => ({ ym: r.ym, word: r.word, n: Number(r.n) }));
+}
