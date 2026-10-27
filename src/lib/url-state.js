@@ -53,13 +53,15 @@ export function decodeHashToView(hash, opts) {
 }
 
 // --- analysis (Elemzés) view -----------------------------------------------
-// Three sub-views live under `tab=elemzes`. The narratives sub-view carries one or
+// Four sub-views live under `tab=elemzes`. The narratives sub-view carries one or
 // more search phrases (repeated `q`), the accent-sensitive flag and its ratio mode
 // (on by default, so `ratio=0` turns it off). The activity sub-view
 // (`view=activity`) carries its author selection by NAME (repeated `author`, stable
 // across rebuilds — the caller maps names <-> ids) and its own ratio mode (off by
-// default, so `ratio=1` turns it on). The link-availability sub-view (`view=links`)
-// carries no parameters of its own. `q` never collides with the Adatbázis search.
+// default, so `ratio=1` turns it on). The words sub-view (`view=words`) carries a
+// single `author` (by name) and its own ratio mode (off by default, `ratio=1` on).
+// The link-availability sub-view (`view=links`) carries no parameters of its own.
+// `q` never collides with the Adatbázis search.
 
 /**
  * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames?:string[]}} v
@@ -83,11 +85,13 @@ export function encodeAnalysisToHash(v) {
     p.set('view', 'links');
     return p.toString();
   }
-  // The "Leggyakoribb szavak" sub-view carries a single author (by name).
+  // The "Leggyakoribb szavak" sub-view carries a single author (by name) and its
+  // ratio mode (off by default, only meaningful alongside an author selection).
   if (v.view === 'words') {
     p.set('view', 'words');
     const name = (v.authorNames || []).find((x) => x && x.trim() !== '');
     if (name) p.append('author', name);
+    if (v.ratio && name) p.set('ratio', '1');
     return p.toString();
   }
   // narratives (the default sub-view): one or more phrases plus the toggles.
@@ -114,7 +118,7 @@ export function decodeHashToAnalysis(hash) {
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
     accentSensitive: p.get('accent') === '1',
     // Narratives ratio defaults on (`ratio=0` off); activity ratio defaults off (`ratio=1` on).
-    ratio: view === 'activity' ? p.get('ratio') === '1' : p.get('ratio') !== '0',
+    ratio: view === 'activity' || view === 'words' ? p.get('ratio') === '1' : p.get('ratio') !== '0',
     authorNames: p.getAll('author').filter((n) => n && n.trim() !== '')
   };
 }

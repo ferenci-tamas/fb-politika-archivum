@@ -11,10 +11,13 @@
 
 /**
  * @param {{ym:string, word:string, n:number}[]} rows one author's word_monthly rows
+ * @param {Map<string,number>|null} [totalsByYm] ym -> that month's total content-word
+ *   tokens (word_month_totals); sets each point's `total` so ratio mode can show the
+ *   word's share of content words. When null, `total` falls back to the stack sum.
  * @param {number} [limit] how many words (series) to keep, by total count
  * @returns {{series:{label:string,total:number,points:{ym:string,n:number,total:number}[]}[], months:string[]}}
  */
-export function shapeTopWords(rows, limit = 20) {
+export function shapeTopWords(rows, totalsByYm = null, limit = 10) {
   if (!rows || rows.length === 0) return { series: [], months: [] };
 
   const months = [...new Set(rows.map((r) => r.ym))].sort();
@@ -39,19 +42,26 @@ export function shapeTopWords(rows, limit = 20) {
     .sort((a, b) => totals.get(b) - totals.get(a) || (a < b ? -1 : a > b ? 1 : 0))
     .slice(0, limit);
 
-  // Per-month stacked total over the kept words (the tooltip denominator).
+  // Per-month stacked total over the kept words (fallback denominator).
   const monthStackTotal = new Array(months.length).fill(0);
   for (const word of topWords) {
     const arr = byWord.get(word);
     for (let i = 0; i < months.length; i++) monthStackTotal[i] += arr[i];
   }
 
+  // Ratio-mode denominator per month: the cell's total content-word tokens when
+  // available (word_month_totals), else the displayed stack sum (absolute-only).
+  const denom = months.map((ym, i) => {
+    const t = totalsByYm && totalsByYm.get ? totalsByYm.get(ym) : null;
+    return t && t > 0 ? t : monthStackTotal[i];
+  });
+
   const series = topWords.map((word) => {
     const arr = byWord.get(word);
     return {
       label: word,
       total: totals.get(word),
-      points: months.map((ym, i) => ({ ym, n: arr[i], total: monthStackTotal[i] }))
+      points: months.map((ym, i) => ({ ym, n: arr[i], total: denom[i] }))
     };
   });
 

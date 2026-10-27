@@ -371,3 +371,14 @@ export function topWordsByAuthor(db, authorId) {
     .selectObjects('SELECT ym, word, n FROM word_monthly WHERE authorId = ? ORDER BY ym, n DESC', [authorId])
     .map((r) => ({ ym: r.ym, word: r.word, n: Number(r.n) }));
 }
+
+/**
+ * One author's per-month total content-word tokens (word_month_totals), the
+ * denominator for relative word frequencies. One contiguous range read, keyed
+ * (authorId, ym) to match word_monthly. Only call when the table exists.
+ */
+export function topWordTotalsByAuthor(db, authorId) {
+  return db
+    .selectObjects('SELECT ym, tokens FROM word_month_totals WHERE authorId = ? ORDER BY ym', [authorId])
+    .map((r) => ({ ym: r.ym, tokens: Number(r.tokens) }));
+}

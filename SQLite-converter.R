@@ -48,8 +48,9 @@ FTS5_REQUIRED_VERSION <- 4L
 # clustered child rowids. 2: as 1, but the rowids of posts, links and images are
 # an explicit column (id INTEGER PRIMARY KEY), and every post also carries its
 # images and links as JSON (posts.images, posts.links), so one query hydrates a
-# page. 3: as 2, plus a word_monthly table -- the top words per author and
-# year-month (section 3b) -- for the website's "Leggyakoribb szavak" view.
+# page. 3: as 2, plus word_monthly (top words per author and year-month) and
+# word_month_totals (that cell's total content-word tokens, the denominator for
+# relative word frequencies) -- section 3b -- for the "Leggyakoribb szavak" view.
 SCHEMA_VERSION <- 3L
 
 # "format" of the parts manifest (manifest.json and latest.json, section 15).
@@ -79,10 +80,14 @@ TEST_LIMIT <- 100L
 # downloaded to UDPIPE_MODEL_DIR on first use. Tagging the whole corpus is the slow
 # step and is never cached: it runs fresh every build, in WORD_CHUNK_SIZE-post
 # chunks across WORD_CORES PSOCK workers.
-TOP_WORDS_N <- 20L
+TOP_WORDS_N <- 10L
 UDPIPE_LANGUAGE <- "hungarian-szeged"
 UDPIPE_MODEL_DIR <- file.path(dirname(OUTPUT_FILE), "udpipe-models")
 STOPWORDS_SOURCE <- "stopwords-iso"
+# POS filtering: keep only these Universal POS tags (content words). Nouns, proper
+# nouns and adjectives are the most topical; verbs and adverbs are excluded so that
+# frequent light verbs (fog, akar, tud) do not dominate the lists.
+KEEP_UPOS <- c("NOUN", "PROPN", "ADJ")
 WORD_CHUNK_SIZE <- 8000L
 WORD_CORES <- max(1L, parallel::detectCores() - 1L)
 
@@ -177,14 +182,13 @@ cat("authors: ", nrow(authors), " (including ", sum(is.na(authors$authorname)), 
 # that month's posts (ties at the cut are kept, so a cell may hold a few more).
 # Words are udpipe lemmas from the Hungarian model, so inflected forms collapse to
 # one entry ("Magyarorszagot", "Magyarorszagon", ... -> "Magyarorszag"). URLs and
-# #hashtags are stripped first; then punctuation, symbols, emoji (anything without
-# a letter), numbers, single characters and Hungarian stopwords are dropped. Counts
-# are raw. The whole corpus is re-tagged on every build (no cache). The result is
-# loaded into word_monthly like any other table (sections 5-7).
+# #hashtags are stripped first; then only content words are kept (udpipe POS tags in
+# KEEP_UPOS -- nouns, proper nouns, adjectives), and numbers, single characters,
+# non-letters (emoji etc.) and Hungarian stopwords are dropped. Counts are raw. The
+# whole corpus is re-tagged on every build (no cache); loaded into word_monthly (5-7).
 ###############################################################################
 
 stopwords_hu <- stringi::stri_trans_nfc(stopwords::stopwords("hu", source = STOPWORDS_SOURCE))
-drop_upos <- c("PUNCT", "SYM", "NUM", "X")
 
 ud_model_file <- local({
   dir.create(UDPIPE_MODEL_DIR, showWarnings = FALSE, recursive = TRUE)
@@ -211,7 +215,7 @@ tag_chunk <- function(rows) {
     model, x = clean, doc_id = rows$doc_id, tokenizer = "tokenizer", tagger = "default", parser = "none"))
   empty <- data.table::data.table(authorId = integer(), ym = character(), word = character(), n = integer())
   if (!nrow(ann)) return(empty)
-  ann <- ann[!is.na(lemma) & !upos %chin% drop_upos &
+  ann <- ann[!is.na(lemma) & upos %chin% KEEP_UPOS &
     stringi::stri_detect_regex(lemma, "\\p{L}") &
     nchar(lemma) > 1L &
     !stringi::stri_detect_regex(lemma, "[0-9]") &
@@ -227,7 +231,7 @@ word_elapsed <- system.time(
   if (WORD_CORES > 1L) {
     cl <- parallel::makeCluster(WORD_CORES)
     word_parts <- tryCatch({
-      parallel::clusterExport(cl, c("ud_model_file", "drop_upos", "stopwords_hu"))
+      parallel::clusterExport(cl, c("ud_model_file", "KEEP_UPOS", "stopwords_hu"))
       parallel::clusterEvalQ(cl, { library(data.table); library(udpipe); library(stringi) })
       parallel::parLapply(cl, chunks, tag_chunk)
     }, finally = parallel::stopCluster(cl))
@@ -238,12 +242,16 @@ word_elapsed <- system.time(
 cat("tagging done in ", round(word_elapsed), "s\n", sep = "")
 
 word_counts <- rbindlist(word_parts)[, .(n = sum(n)), by = .(authorId, ym, word)]
+# Denominator for relative frequencies: each cell's total content-word tokens (the
+# full filtered vocabulary, summed before the top-N cut -- so it includes the tail
+# that word_monthly drops and cannot be recovered from word_monthly alone).
+word_month_totals <- word_counts[, .(tokens = sum(n)), by = .(authorId, ym)][order(authorId, ym)]
 # Top TOP_WORDS_N per author-month; ties.method "min" keeps every word tied with the
 # cut, so a cell may hold more than TOP_WORDS_N rows (never fewer than it has words).
 word_counts[, rnk := frank(-n, ties.method = "min"), by = .(authorId, ym)]
 word_monthly <- word_counts[rnk <= TOP_WORDS_N, .(authorId, ym, word, n)][order(authorId, ym, -n, word)]
 cat("word_monthly: ", nrow(word_monthly), " rows across ",
-  uniqueN(word_monthly[, .(authorId, ym)]), " author-months\n", sep = "")
+  nrow(word_month_totals), " author-months\n", sep = "")
 rm(stopwords_hu, word_docs, chunks, word_parts, word_counts)
 
 ###############################################################################
@@ -287,12 +295,14 @@ dbExecute(stage, "CREATE TABLE links (postId TEXT, link TEXT, available INTEGER)
 dbExecute(stage, "CREATE TABLE images (postId TEXT, filename TEXT)")
 dbExecute(stage, "CREATE TABLE authors (authorId INTEGER, authorname TEXT, post_count INTEGER, first_time INTEGER, last_time INTEGER)")
 dbExecute(stage, "CREATE TABLE word_monthly (authorId INTEGER, ym TEXT, word TEXT, n INTEGER)")
+dbExecute(stage, "CREATE TABLE word_month_totals (authorId INTEGER, ym TEXT, tokens INTEGER)")
 dbWithTransaction(stage, {
   dbAppendTable(stage, "authors", authors)
   dbAppendTable(stage, "posts", posts)
   dbAppendTable(stage, "links", links)
   dbAppendTable(stage, "images", images)
   dbAppendTable(stage, "word_monthly", word_monthly)
+  dbAppendTable(stage, "word_month_totals", word_month_totals)
 })
 dbDisconnect(stage)
 
@@ -394,6 +404,19 @@ dbExecute(con, "
   ) WITHOUT ROWID"
 )
 
+# Per author and year-month, the total content-word tokens of that cell -- the
+# denominator for relative word frequencies (word_monthly keeps only the top words,
+# so this full-cell total cannot be recovered from it). WITHOUT ROWID, keyed on
+# (authorId, ym) to match word_monthly so the two are read together per author.
+dbExecute(con, "
+  CREATE TABLE word_month_totals (
+      authorId INTEGER NOT NULL REFERENCES authors(authorId),
+      ym       TEXT NOT NULL,
+      tokens   INTEGER NOT NULL CHECK (tokens > 0),
+      PRIMARY KEY (authorId, ym)
+  ) WITHOUT ROWID"
+)
+
 dbExecute(con, "CREATE TABLE archive_meta (key TEXT NOT NULL PRIMARY KEY, value) WITHOUT ROWID")
 
 # The page size is fixed once the first table exists. SQLite ignores an invalid
@@ -420,6 +443,13 @@ dbExecute(con, "
   SELECT authorId, ym, word, n
   FROM stage.word_monthly
   ORDER BY authorId, ym, word"
+)
+
+dbExecute(con, "
+  INSERT INTO word_month_totals (authorId, ym, tokens)
+  SELECT authorId, ym, tokens
+  FROM stage.word_month_totals
+  ORDER BY authorId, ym"
 )
 
 # The JSON is built from the staging tables in staging (= input) order, the
@@ -661,6 +691,24 @@ check(scalar("SELECT count(*) FROM word_monthly") == nrow(word_monthly) &&
 check(scalar("SELECT count(*) FROM word_monthly WHERE authorId NOT IN (SELECT authorId FROM authors)") == 0,
   "every word_monthly row has a known author")
 
+check(scalar("SELECT count(*) FROM word_month_totals") == nrow(word_month_totals) &&
+  scalar("
+    SELECT count(*) FROM (
+      SELECT authorId, ym, tokens FROM stage.word_month_totals
+      EXCEPT SELECT authorId, ym, tokens FROM main.word_month_totals)") == 0,
+  "word_month_totals identical to the input")
+# Every stored cell has a totals row, and the total never falls below the kept words.
+check(scalar("
+  SELECT count(*) FROM (SELECT DISTINCT authorId, ym FROM word_monthly) c
+  WHERE NOT EXISTS (SELECT 1 FROM word_month_totals t WHERE t.authorId = c.authorId AND t.ym = c.ym)") == 0,
+  "every word_monthly cell has a word_month_totals row")
+check(scalar("
+  SELECT count(*) FROM (
+    SELECT wm.authorId, wm.ym, SUM(wm.n) AS kept, MAX(t.tokens) AS total
+    FROM word_monthly wm JOIN word_month_totals t ON t.authorId = wm.authorId AND t.ym = wm.ym
+    GROUP BY wm.authorId, wm.ym HAVING kept > total)") == 0,
+  "kept word counts never exceed the cell token total")
+
 # id must be the rowid alias (the only primary key column, declared INTEGER) in
 # posts, links and images, so that no copy of the file can renumber the rows.
 check(scalar("
@@ -874,6 +922,7 @@ for (x in list(
   list("images", "id, postId, filename"),
   list("authors", "authorId, authorname, post_count, first_time, last_time"),
   list("word_monthly", "authorId, ym, word, n"),
+  list("word_month_totals", "authorId, ym, tokens"),
   list("archive_meta", "key, value")
 )) {
   check(scalar(sprintf("SELECT (SELECT count(*) FROM main.%1$s) = (SELECT count(*) FROM compact.%1$s)", x[[1]])) == 1 &&

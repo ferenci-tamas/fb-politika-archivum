@@ -55,6 +55,9 @@ let linkMonthly = null;
 // Whether the archive has the word_monthly table (schema_version >= 3), for the
 // "Leggyakoribb szavak" view. Older archives lack it; the view then shows a notice.
 let wordsAvailable = false;
+// Whether word_month_totals (the relative-frequency denominators) is present. The
+// ratio toggle in the words view is only offered when it is.
+let wordsRatioAvailable = false;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -154,9 +157,14 @@ async function init() {
     meta = Q.readMeta(db);
     authors = Q.readAuthors(db);
     authorsById = new Map(authors.map((a) => [a.authorId, a]));
+    // The relative-frequency denominators ride in a separate table; detect it so the
+    // ratio toggle is only offered when the archive actually carries it.
+    wordsRatioAvailable = wordsAvailable && Number(
+      db.selectValue("SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='word_month_totals'")
+    ) > 0;
     ready = true;
 
-    self.postMessage({ type: 'ready', meta, authors, wordsAvailable });
+    self.postMessage({ type: 'ready', meta, authors, wordsAvailable, wordsRatioAvailable });
   } catch (err) {
     self.postMessage({
       type: 'init-error',
@@ -352,7 +360,10 @@ function handleTopWords(msg) {
       return;
     }
     const rows = Q.topWordsByAuthor(db, authorId);
-    const { series } = shapeTopWords(rows, msg.limit || 20);
+    const totals = wordsRatioAvailable
+      ? new Map(Q.topWordTotalsByAuthor(db, authorId).map((r) => [r.ym, r.tokens]))
+      : null;
+    const { series } = shapeTopWords(rows, totals, msg.limit || 10);
     self.postMessage({
       type: 'top-words-result',
       reqId: msg.reqId,

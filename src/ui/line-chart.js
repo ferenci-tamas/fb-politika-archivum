@@ -105,10 +105,16 @@ function buildOption(series, ariaLabel, mode, stack) {
         let html = `<strong>${ym}</strong>`;
         let items = arr;
         if (stack) {
-          // Many stacked series: lead with the month's total, then list only the
-          // words present this month, most frequent first, to keep the tooltip short.
-          const sum = arr.reduce((s, p) => s + (p.data ? p.data.n : 0), 0);
-          html += ` — ${formatCount(sum)}`;
+          // Many stacked series: lead with the month's total (count, or stacked % in
+          // ratio mode), then list only the words present this month, most frequent
+          // first, to keep the tooltip short.
+          const sumN = arr.reduce((s, p) => s + (p.data ? p.data.n : 0), 0);
+          if (ratio) {
+            const tot = (arr[0] && arr[0].data && arr[0].data.total) || 0;
+            html += tot >= MIN_TOTAL_FOR_RATIO ? ` — ${((sumN / tot) * 100).toFixed(2)}%` : ' — —';
+          } else {
+            html += ` — ${formatCount(sumN)}`;
+          }
           items = arr.filter((p) => p.data && p.data.n > 0).sort((a, b) => b.data.n - a.data.n);
         }
         for (const p of items) {

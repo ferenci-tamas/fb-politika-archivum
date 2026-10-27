@@ -62,6 +62,7 @@ const els = {
   activityRatio: $('activity-ratio'),
   elemzesWords: $('elemzes-words'),
   wordsAuthor: $('words-author'),
+  wordsRatio: $('words-ratio'),
   wordsStatus: $('words-status'),
   wordsChart: $('words-chart'),
   search: $('search'),
@@ -236,6 +237,8 @@ function onReady(msg) {
   authorIdToName = new Map(msg.authors.map((a) => [a.authorId, a.authorname]));
   authorNameToId = new Map(msg.authors.map((a) => [a.authorname, a.authorId]));
   wordsAvailable = !!msg.wordsAvailable;
+  wordsRatioAvailable = !!msg.wordsRatioAvailable;
+  els.wordsRatio.disabled = !wordsRatioAvailable; // static per archive; never re-enabled
   populateWordsAuthors(msg.authors);
   authorPicker = createAuthorCombobox({
     container: els.authorCombobox,
@@ -496,7 +499,12 @@ function updateHash() {
       view: elemzesView,
       phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
       accentSensitive: els.analysisAccent.checked,
-      ratio: elemzesView === 'activity' ? els.activityRatio.checked : els.analysisRatio.checked,
+      ratio:
+        elemzesView === 'activity'
+          ? els.activityRatio.checked
+          : elemzesView === 'words'
+            ? els.wordsRatio.checked
+            : els.analysisRatio.checked,
       authorNames
     });
     body = query ? `tab=elemzes&${query}` : 'tab=elemzes';
@@ -654,6 +662,7 @@ let wordsReqId = 0;
 let wordsAuthorId = null; // single selected author for the top-words view, or null
 let lastWords = null; // cached { authorId, series } for the current author selection
 let wordsAvailable = false; // set from the 'ready' message (word_monthly, schema_version >= 3)
+let wordsRatioAvailable = false; // set from 'ready' (word_month_totals present)
 
 function addPhraseRow(value = '') {
   if (els.analysisPhrases.querySelectorAll('.analysis-phrase-row').length >= MAX_PHRASES) return null;
@@ -977,7 +986,7 @@ function drawLinkChart() {
 // --- Elemzés: "Leggyakoribb szavak" sub-view --------------------------------
 // One author's most frequent words (word_monthly, schema_version 3) as a stacked
 // area chart. A native <select> picks a single author; the worker returns the
-// author's overall top-20 words as 0-filled monthly series. Cached per author.
+// author's overall top-10 words as 0-filled monthly series. Cached per author.
 function populateWordsAuthors(authors) {
   const frag = document.createDocumentFragment();
   for (const a of authors) {
@@ -1046,13 +1055,16 @@ function drawWordsChart() {
     els.wordsChart.replaceChildren();
     return;
   }
+  const ratio = wordsRatioAvailable && els.wordsRatio.checked;
   els.wordsStatus.textContent = `${name} — ${series.length} leggyakoribb szó`;
   renderLineChart(els.wordsChart, series, {
-    mode: 'count',
+    mode: ratio ? 'ratio' : 'count',
     stack: true,
     title: `${name} leggyakoribb szavai havonta`,
-    subtitle: '(a szerző összességében leggyakoribb szavai, havi előfordulás)',
-    ariaLabel: `${name} leggyakrabban használt szavainak havi előfordulása, egymásra rétegzett területdiagramon`
+    subtitle: ratio
+      ? '(havi előfordulás a tartalmas szavak arányában)'
+      : '(a szerző összességében leggyakoribb szavai, havi előfordulás)',
+    ariaLabel: `${name} leggyakrabban használt szavainak havi ${ratio ? 'aránya a tartalmas szavakhoz képest' : 'előfordulása'}, egymásra rétegzett területdiagramon`
   });
 }
 
@@ -1069,16 +1081,25 @@ els.wordsAuthor.addEventListener('change', () => {
   prepareWords();
 });
 
+// Ratio toggle: re-render from the cached series (points already carry the per-month
+// denominator), so no re-query, and keep the shareable URL in sync.
+els.wordsRatio.addEventListener('change', () => {
+  drawWordsChart();
+  updateHash();
+});
+
 // Restore the top-words sub-view's author from an Elemzés deep link. Authors travel
 // by NAME (stable across rebuilds), so this needs the author maps: it runs from
 // onReady and on hashchange, never at module load.
 function restoreWordsAuthorFromHash() {
   const onElemzes = new URLSearchParams(location.hash.replace(/^#/, '')).get('tab') === 'elemzes';
-  const a = onElemzes ? decodeHashToAnalysis(location.hash) : { view: 'narratives', authorNames: [] };
+  const a = onElemzes ? decodeHashToAnalysis(location.hash) : { view: 'narratives', authorNames: [], ratio: false };
   const name = a.view === 'words' ? (a.authorNames[0] || null) : null;
   const id = name != null ? authorNameToId.get(name) : null;
   wordsAuthorId = Number.isFinite(id) ? id : null;
   if (els.wordsAuthor) els.wordsAuthor.value = wordsAuthorId == null ? '' : String(wordsAuthorId);
+  // Ratio only applies when the archive carries the denominators (control enabled).
+  els.wordsRatio.checked = a.view === 'words' && wordsRatioAvailable ? a.ratio : false;
 }
 
 // The Elemzés tab button opens a menu to choose the sub-view (rather than switching
@@ -1135,14 +1156,11 @@ function applyHashAnalysisToState() {
     : { view: 'narratives', phrases: [], accentSensitive: false, ratio: true };
   elemzesView = a.view === 'activity' ? 'activity' : a.view === 'links' ? 'links' : a.view === 'words' ? 'words' : 'narratives';
   els.analysisAccent.checked = a.accentSensitive;
-  // Route the decoded ratio to its sub-view; the other sub-view keeps its default.
-  if (a.view === 'activity') {
-    els.activityRatio.checked = a.ratio;
-    els.analysisRatio.checked = true; // narratives ratio defaults on
-  } else {
-    els.analysisRatio.checked = a.ratio;
-    els.activityRatio.checked = false; // activity ratio defaults off
-  }
+  // Route the decoded ratio to its sub-view; the others keep their defaults. The words
+  // sub-view's ratio is restored in restoreWordsAuthorFromHash (it needs the
+  // availability flag, known only once the DB is ready).
+  els.activityRatio.checked = a.view === 'activity' ? a.ratio : false; // activity defaults off
+  els.analysisRatio.checked = a.view === 'narratives' ? a.ratio : true; // narratives defaults on
   const phrases = a.phrases.slice(0, MAX_PHRASES);
   if (phrases.length === 0) addPhraseRow();
   else for (const phrase of phrases) addPhraseRow(phrase);

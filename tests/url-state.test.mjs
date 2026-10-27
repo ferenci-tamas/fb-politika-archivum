@@ -143,3 +143,12 @@ test('words sub-view with no author is just the sub-view', () => {
   assert.equal(encodeAnalysisToHash({ view: 'words', authorNames: [] }), 'view=words');
   assert.equal(decodeHashToAnalysis('#tab=elemzes&view=words').view, 'words');
 });
+
+test('words sub-view ratio deep-links (off by default, ratio=1 on, needs an author)', () => {
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&view=words').ratio, false);
+  const on = encodeAnalysisToHash({ view: 'words', ratio: true, authorNames: ['Áder János'] });
+  assert.equal(new URLSearchParams(on).get('ratio'), '1');
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&' + on).ratio, true);
+  // No author -> the ratio is meaningless, so it is omitted.
+  assert.equal(new URLSearchParams(encodeAnalysisToHash({ view: 'words', ratio: true, authorNames: [] })).get('ratio'), null);
+});

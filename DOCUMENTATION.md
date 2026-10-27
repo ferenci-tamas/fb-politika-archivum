@@ -109,7 +109,8 @@ version 3). Summary:
 | `links` | `id`, `postId`, `link`, `available` | Normalized 1:N; `id` clustered in the post's rowid range. |
 | `images` | `id`, `postId`, `filename` | Normalized 1:N; clustered likewise. |
 | `authors` | `authorId`, `authorname`, `post_count`, `first_time`, `last_time` | `authorId` in Hungarian alphabetical order; precomputed stats. |
-| `word_monthly` | `authorId`, `ym`, `word`, `n` | *(schema 3)* Per author and `YYYY-MM`, that month's top ~20 content words (udpipe lemmas) with raw counts `n`; boundary ties may add a few. `WITHOUT ROWID`, keyed `(authorId, ym, word)` so one author is a single range read. Powers the **Leggyakoribb szavak** view. |
+| `word_monthly` | `authorId`, `ym`, `word`, `n` | *(schema 3)* Per author and `YYYY-MM`, that month's top ~10 content words — udpipe lemmas filtered to nouns, proper nouns and adjectives (stopwords/numbers removed) — with raw counts `n`; boundary ties may add a few. `WITHOUT ROWID`, keyed `(authorId, ym, word)` so one author is a single range read. Powers the **Leggyakoribb szavak** view. |
+| `word_month_totals` | `authorId`, `ym`, `tokens` | *(schema 3)* Per author and `YYYY-MM`, the cell's total content-word tokens — the denominator for the relative (share-of-content-words) mode of the **Leggyakoribb szavak** chart (can't be recovered from `word_monthly`, which keeps only the top words). `WITHOUT ROWID`, keyed `(authorId, ym)`. |
 | `archive_meta` | `key`, `value` | `post_count`, `min_id`/`max_id`, `min_time`/`max_time`, strides, `schema_version`, … |
 
 Indexes: `idx_posts_postId` (unique), `idx_posts_time`, `idx_posts_author_time

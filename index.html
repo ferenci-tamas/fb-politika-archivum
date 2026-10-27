@@ -326,9 +326,9 @@
           <h2 class="elemzes-view-title">Leggyakoribb szavak</h2>
           <p class="analysis-hint">
             Egy kiválasztott szerző leggyakrabban használt szavai havi bontásban, egymásra rétegzett
-            területdiagramon. A szavak lemmatizálva vannak (a ragozott alakok a szótövükhöz számítanak),
-            a gyakori funkciószavak (névelők, kötőszavak stb.), számok és írásjelek nélkül. Az ábra a
-            szerző összességében leggyakoribb 20 szavát mutatja.
+            területdiagramon. A szavak lemmatizálva vannak (a ragozott alakok a szótövükhöz számítanak);
+            csak a tartalmas szavak (fő- és tulajdonnevek, melléknevek) szerepelnek, a funkciószavak,
+            igék, számok és írásjelek nélkül. Az ábra a szerző összességében leggyakoribb 10 szavát mutatja.
           </p>
           <div class="activity-controls">
             <div class="field">
@@ -337,6 +337,10 @@
                 <option value="" selected>Válassz szerzőt…</option>
               </select>
             </div>
+            <label class="accent-toggle activity-ratio-toggle">
+              <input type="checkbox" id="words-ratio" />
+              <span>Arányosítva (a havi tartalmas szavak arányában)</span>
+            </label>
           </div>
           <div class="status-bar">
             <span id="words-status" class="result-count" aria-live="polite"></span>
