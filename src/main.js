@@ -663,6 +663,7 @@ let wordsReqId = 0;
 let wordsAuthorId = null; // single selected author for the top-words view, or null
 let lastWords = null; // cached { authorId, rows, totals } for the current author selection
 const WORDS_LIMIT = 10; // words (series) shown in the top-words chart
+const WORD_SELECT_MIN_TOKENS = 20; // ignore months sparser than this when ranking words
 const wordColorMap = new Map(); // stable word -> colour for the current author's chart
 let wordsAvailable = false; // set from the 'ready' message (word_monthly, schema_version >= 3)
 let wordsRatioAvailable = false; // set from 'ready' (word_month_totals present)
@@ -1057,7 +1058,7 @@ function onWordsResult(msg) {
 function drawWordsChart() {
   if (!lastWords) return;
   const name = authorIdToName.get(lastWords.authorId) || '';
-  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, null, WORD_RATIO_MIN_TOKENS);
+  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, null, WORD_SELECT_MIN_TOKENS);
   if (!series.length) {
     els.wordsStatus.textContent = `${name}: nincs megjeleníthető szó.`;
     els.wordsChart.replaceChildren();
@@ -1089,7 +1090,7 @@ function onWordsZoom(loMs, hiMs) {
       return t >= loMs && t <= hiMs;
     })
   );
-  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, windowMonths.size ? windowMonths : null, WORD_RATIO_MIN_TOKENS);
+  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, windowMonths.size ? windowMonths : null, WORD_SELECT_MIN_TOKENS);
   if (!series.length) return;
   assignStableColors(series, wordColorMap);
   updateStackedSeries(series);

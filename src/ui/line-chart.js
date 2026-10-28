@@ -15,8 +15,11 @@ const MIN_TOTAL_FOR_RATIO = 100;
 // that month, not a post count, so it is far smaller (tens, not hundreds). Reusing the
 // 100-post floor there blanks most months — about 55% of Orbán Viktor's — even when a
 // word's raw count is meaningful, so that view passes this lower content-token floor
-// instead. Below it a single word can swing the share wildly (1 of 1 token = 100%).
-export const WORD_RATIO_MIN_TOKENS = 20;
+// instead, and only for months with fewer than a handful of content words, where a
+// single word would swing the share wildly (1 of 1 token = 100%). Word *selection* uses
+// its own, higher token floor (WORD_SELECT_MIN_TOKENS in src/main.js), so this display
+// floor can stay low without letting a sparse month crown a one-off word.
+export const WORD_RATIO_MIN_TOKENS = 5;
 
 // ECharts' default "save" icon, reused for our custom download button (which adds a
 // title + attribution to the exported image only — see exportChartPng).
