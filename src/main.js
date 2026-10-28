@@ -1126,8 +1126,9 @@ function restoreWordsAuthorFromHash() {
   const id = name != null ? authorNameToId.get(name) : null;
   wordsAuthorId = Number.isFinite(id) ? id : null;
   if (els.wordsAuthor) els.wordsAuthor.value = wordsAuthorId == null ? '' : String(wordsAuthorId);
-  // Ratio only applies when the archive carries the denominators (control enabled).
-  els.wordsRatio.checked = a.view === 'words' && wordsRatioAvailable ? a.ratio : false;
+  // Ratio only applies when the archive carries the denominators (control enabled). It
+  // defaults on; an explicit words-view link is still respected.
+  els.wordsRatio.checked = wordsRatioAvailable && (a.view === 'words' ? a.ratio : true);
 }
 
 // The Elemzés tab button opens a menu to choose the sub-view (rather than switching
