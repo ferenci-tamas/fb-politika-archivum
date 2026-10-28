@@ -11,6 +11,13 @@ import { formatCount, hungarianArticle } from '../lib/format.js';
 // a gap) because their share of matches is too noisy to be meaningful.
 const MIN_TOTAL_FOR_RATIO = 100;
 
+// The "Leggyakoribb szavak" view's denominator is one author's content-word tokens
+// that month, not a post count, so it is far smaller (tens, not hundreds). Reusing the
+// 100-post floor there blanks most months — about 55% of Orbán Viktor's — even when a
+// word's raw count is meaningful, so that view passes this lower content-token floor
+// instead. Below it a single word can swing the share wildly (1 of 1 token = 100%).
+export const WORD_RATIO_MIN_TOKENS = 20;
+
 // ECharts' default "save" icon, reused for our custom download button (which adds a
 // title + attribution to the exported image only — see exportChartPng).
 const SAVE_ICON = 'path://M4.7,22.9L29.3,45.5L54.7,23.4M4.6,43.6L4.6,58L53.8,58L53.8,43.6M29.2,45.1L29.2,0';
@@ -43,16 +50,17 @@ let last = null; // { container, series, ariaLabel, mode } — for re-theme / ex
  * show both regardless of mode.
  * @param {{ym:string, n:number, total:number}[]} points
  * @param {'count'|'ratio'} mode
+ * @param {number} [minTotal] ratio-mode floor on `total`; months below it become a gap
  * @returns {Array<{value:[number, number], n:number, total:number}>}
  */
-export function toSeriesData(points, mode = 'count') {
+export function toSeriesData(points, mode = 'count', minTotal = MIN_TOTAL_FOR_RATIO) {
   return points.map((p) => {
     const ts = Date.UTC(Number(p.ym.slice(0, 4)), Number(p.ym.slice(5, 7)) - 1, 1);
     const total = Number(p.total) || 0;
     let y;
     if (mode === 'ratio') {
       // Suppress sparse months (gap in the line) rather than plot a noisy ratio.
-      y = total >= MIN_TOTAL_FOR_RATIO ? (p.n / total) * 100 : null;
+      y = total >= minTotal ? (p.n / total) * 100 : null;
     } else {
       y = p.n;
     }
@@ -72,7 +80,7 @@ function escHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function buildOption(series, ariaLabel, mode, stack) {
+function buildOption(series, ariaLabel, mode, stack, minTotal = MIN_TOTAL_FOR_RATIO) {
   const muted = cssVar('--muted', '#5b636e');
   const border = cssVar('--border', '#d4d8de');
   const surface = cssVar('--surface', '#ffffff');
@@ -111,7 +119,7 @@ function buildOption(series, ariaLabel, mode, stack) {
           const sumN = arr.reduce((s, p) => s + (p.data ? p.data.n : 0), 0);
           if (ratio) {
             const tot = (arr[0] && arr[0].data && arr[0].data.total) || 0;
-            html += tot >= MIN_TOTAL_FOR_RATIO ? ` — ${((sumN / tot) * 100).toFixed(2)}%` : ' — —';
+            html += tot >= minTotal ? ` — ${((sumN / tot) * 100).toFixed(2)}%` : ' — —';
           } else {
             html += ` — ${formatCount(sumN)}`;
           }
@@ -121,7 +129,7 @@ function buildOption(series, ariaLabel, mode, stack) {
           const { n, total } = p.data;
           let val;
           if (ratio) {
-            val = total < MIN_TOTAL_FOR_RATIO ? '—' : `${((n / total) * 100).toFixed(2)}%`;
+            val = total < minTotal ? '—' : `${((n / total) * 100).toFixed(2)}%`;
           } else {
             val = formatCount(n);
           }
@@ -157,7 +165,7 @@ function buildOption(series, ariaLabel, mode, stack) {
     series: series.map((s) => ({
       type: 'line',
       name: s.label,
-      data: toSeriesData(s.points, mode),
+      data: toSeriesData(s.points, mode, minTotal),
       showSymbol: false,
       connectNulls: false,
       lineStyle: { width: stack ? 1 : 2 },
@@ -267,7 +275,7 @@ export function preloadChart() {
  * @param {{label:string, points:{ym:string,n:number,total:number}[]}[]} series
  * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
  */
-export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '', stack = false } = {}) {
+export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '', stack = false, minTotalForRatio = MIN_TOTAL_FOR_RATIO } = {}) {
   if (!container) return;
   disposeChart();
   if (!series || series.length === 0) {
@@ -275,7 +283,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     clear(container);
     return;
   }
-  last = { container, series, ariaLabel, mode, title, subtitle, stack };
+  last = { container, series, ariaLabel, mode, title, subtitle, stack, minTotalForRatio };
 
   let echarts;
   try {
@@ -296,7 +304,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     if (ariaLabel) host.setAttribute('aria-label', ariaLabel);
     container.append(host);
     chartInstance = echarts.init(host, null, { renderer: 'canvas', locale: 'HU' });
-    chartInstance.setOption(buildOption(series, ariaLabel, mode, stack), true);
+    chartInstance.setOption(buildOption(series, ariaLabel, mode, stack, minTotalForRatio), true);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');
   }
@@ -315,7 +323,7 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle, stack: last.stack });
+      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle, stack: last.stack, minTotalForRatio: last.minTotalForRatio });
     });
   }
 }

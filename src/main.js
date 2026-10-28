@@ -13,7 +13,7 @@ import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToD
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
-import { renderLineChart, preloadChart } from './ui/line-chart.js';
+import { renderLineChart, preloadChart, WORD_RATIO_MIN_TOKENS } from './ui/line-chart.js';
 import { el } from './ui/dom.js';
 import { encodeViewToHash, decodeHashToView, encodeAnalysisToHash, decodeHashToAnalysis } from './lib/url-state.js';
 import { marked } from 'marked';
@@ -1060,6 +1060,7 @@ function drawWordsChart() {
   renderLineChart(els.wordsChart, series, {
     mode: ratio ? 'ratio' : 'count',
     stack: true,
+    minTotalForRatio: WORD_RATIO_MIN_TOKENS,
     title: `${name} leggyakoribb szavai havonta`,
     subtitle: ratio
       ? '(havi előfordulás a tartalmas szavak arányában)'
