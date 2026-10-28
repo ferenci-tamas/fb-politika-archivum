@@ -84,10 +84,35 @@ TOP_WORDS_N <- 10L
 UDPIPE_LANGUAGE <- "hungarian-szeged"
 UDPIPE_MODEL_DIR <- file.path(dirname(OUTPUT_FILE), "udpipe-models")
 STOPWORDS_SOURCE <- "stopwords-iso"
+# Stopword languages. Posts often quote or are written in other languages (English
+# most of all), and the Hungarian tagger labels their function words as content
+# words ("the", "of", "in"), so they would otherwise dominate the lists. Matched on
+# both token and lemma (the lemmatizer mangles foreign words: "the" -> "th", which
+# the lemma check alone would miss). All-caps acronyms (DK, EU, PM, NATO) are kept
+# even when they collide with a stopword elsewhere ("eu" is French for "had").
+# German is left out on purpose: its "tag" would drop Hungarian "tag" ("member").
+STOPWORDS_LANGUAGES <- c("hu", "en", "fr")
+# Language filter (schema_version 3). Before tagging, split each post into sentences,
+# detect each sentence's language with cld2, and keep only Hungarian (LANG_KEEP) and,
+# when LANG_KEEP_UNDETERMINED, undetermined sentences (cld2 returns NA, mostly short
+# Hungarian). This drops foreign passages the Hungarian tagger would mislabel as
+# content words, including English quoted inside an otherwise-Hungarian post -- which
+# per-post detection would miss -- and removes content words that stopword removal
+# cannot (peace, Europe, ...). Set LANG_FILTER to FALSE to tag all text.
+LANG_FILTER <- TRUE
+LANG_KEEP <- "hu"
+LANG_KEEP_UNDETERMINED <- TRUE
 # POS filtering: keep only these Universal POS tags (content words). Nouns, proper
 # nouns and adjectives are the most topical; verbs and adverbs are excluded so that
 # frequent light verbs (fog, akar, tud) do not dominate the lists.
 KEEP_UPOS <- c("NOUN", "PROPN", "ADJ")
+# Canonical word form (schema_version 3). The udpipe lemmatizer over-stems Hungarian
+# ("beke" -> "bek") and splits a word across several lemmas; with HUNSPELL_CANONICAL,
+# each content word becomes the hunspell stem of its surface token instead, which
+# recovers the dictionary form and merges the splits. Needs HUNSPELL_DICT (the hunspell
+# package bundles "hu-HU"). Set to FALSE to keep raw udpipe lemmas.
+HUNSPELL_CANONICAL <- TRUE
+HUNSPELL_DICT <- "hu-HU"
 WORD_CHUNK_SIZE <- 8000L
 WORD_CORES <- max(1L, parallel::detectCores() - 1L)
 
@@ -180,15 +205,23 @@ cat("authors: ", nrow(authors), " (including ", sum(is.na(authors$authorname)), 
 #
 # For every author x year-month, the TOP_WORDS_N most frequent content words of
 # that month's posts (ties at the cut are kept, so a cell may hold a few more).
-# Words are udpipe lemmas from the Hungarian model, so inflected forms collapse to
-# one entry ("Magyarorszagot", "Magyarorszagon", ... -> "Magyarorszag"). URLs and
-# #hashtags are stripped first; then only content words are kept (udpipe POS tags in
-# KEEP_UPOS -- nouns, proper nouns, adjectives), and numbers, single characters,
-# non-letters (emoji etc.) and Hungarian stopwords are dropped. Counts are raw. The
-# whole corpus is re-tagged on every build (no cache); loaded into word_monthly (5-7).
+# Each content word is reduced to a canonical form, so inflected forms collapse to one
+# entry ("Magyarorszagot", "Magyarorszagon", ... -> "Magyarorszag"). Foreign text
+# is dropped first (LANG_FILTER): each post is split into sentences and only Hungarian
+# -- and undetermined, mostly short -- ones are kept. URLs and #hashtags are then
+# stripped; then only content words are kept (udpipe POS tags in KEEP_UPOS -- nouns,
+# proper nouns, adjectives), and numbers, single characters, non-letters (emoji etc.)
+# and stopwords (STOPWORDS_LANGUAGES, matched on token and lemma, but never all-caps
+# acronyms like DK or EU) are dropped. The canonical form is the hunspell stem of the
+# token (HUNSPELL_CANONICAL) -- udpipe over-stems, "beke" -> "bek" -- else the udpipe
+# lemma; a stopword re-check then drops forms stemming turned into stopwords. Counts
+# are raw. The whole corpus is re-tagged
+# on every build (no cache); loaded into word_monthly (5-7).
 ###############################################################################
 
-stopwords_hu <- stringi::stri_trans_nfc(stopwords::stopwords("hu", source = STOPWORDS_SOURCE))
+# One lowercase stopword set across STOPWORDS_LANGUAGES, NFC-normalised and deduplicated.
+stopwords_set <- unique(stringi::stri_trans_tolower(stringi::stri_trans_nfc(unlist(
+  lapply(STOPWORDS_LANGUAGES, stopwords::stopwords, source = STOPWORDS_SOURCE), use.names = FALSE))))
 
 ud_model_file <- local({
   dir.create(UDPIPE_MODEL_DIR, showWarnings = FALSE, recursive = TRUE)
@@ -204,8 +237,27 @@ cat("udpipe model: ", basename(ud_model_file), "\n", sep = "")
 word_docs <- posts[!is.na(text) & nzchar(trimws(text)),
   .(doc_id = as.character(.I), authorId, ym = format(as.POSIXct(time, tz = "UTC"), "%Y-%m"), text)]
 
+# Keep only Hungarian text. Each post is split into sentences, cld2 detects each
+# sentence's language, and the kept sentences (Hungarian, plus undetermined when
+# LANG_KEEP_UNDETERMINED) are reassembled into the post; posts with no Hungarian text
+# left drop out. Run once here, not per worker, so the tagger never sees the foreign
+# passages it would otherwise mislabel ("the", "peace", "Europe").
+if (LANG_FILTER) {
+  n_docs <- nrow(word_docs)
+  parts <- stringi::stri_split_boundaries(word_docs$text, type = "sentence")
+  sentences <- data.table(doc_id = rep(word_docs$doc_id, lengths(parts)),
+    sentence = stringi::stri_trim_both(unlist(parts)))
+  sentences <- sentences[nzchar(sentence)]
+  sentences[, lang := cld2::detect_language(sentence)]
+  sentences <- sentences[lang %chin% LANG_KEEP | (LANG_KEEP_UNDETERMINED & is.na(lang))]
+  kept_docs <- sentences[, .(text = paste(sentence, collapse = " ")), by = doc_id]
+  word_docs <- word_docs[, .(doc_id, authorId, ym)][kept_docs, on = "doc_id"]
+  cat("language filter: ", nrow(word_docs), " of ", n_docs, " posts keep Hungarian text\n", sep = "")
+  rm(n_docs, parts, sentences, kept_docs)
+}
+
 # Tokenize + tag + lemmatize one chunk of posts, then drop non-content tokens and
-# return raw (authorId, ym, word) counts. Self-contained so it also runs inside a
+# return raw (authorId, ym, lemma, token, upos) counts. Self-contained so it also runs inside a
 # PSOCK worker, where only the exported objects and attached packages exist.
 tag_chunk <- function(rows) {
   model <- udpipe::udpipe_load_model(ud_model_file)
@@ -213,16 +265,19 @@ tag_chunk <- function(rows) {
   clean <- stringi::stri_replace_all_regex(clean, "#\\S+", " ")
   ann <- data.table::as.data.table(udpipe::udpipe_annotate(
     model, x = clean, doc_id = rows$doc_id, tokenizer = "tokenizer", tagger = "default", parser = "none"))
-  empty <- data.table::data.table(authorId = integer(), ym = character(), word = character(), n = integer())
+  empty <- data.table::data.table(authorId = integer(), ym = character(), lemma = character(), token = character(), upos = character(), n = integer())
   if (!nrow(ann)) return(empty)
   ann <- ann[!is.na(lemma) & upos %chin% KEEP_UPOS &
     stringi::stri_detect_regex(lemma, "\\p{L}") &
     nchar(lemma) > 1L &
     !stringi::stri_detect_regex(lemma, "[0-9]") &
-    !stringi::stri_trans_tolower(lemma) %chin% stopwords_hu]
+    # Stopwords matched on token or lemma; all-caps acronyms (DK, EU, PM) are kept.
+    (stringi::stri_detect_regex(token, "^\\p{Lu}{2,}$") |
+      !(stringi::stri_trans_tolower(lemma) %chin% stopwords_set |
+        stringi::stri_trans_tolower(token) %chin% stopwords_set))]
   if (!nrow(ann)) return(empty)
-  rows[, .(doc_id, authorId, ym)][ann[, .(doc_id, lemma)], on = "doc_id", nomatch = 0L][
-    , .(n = .N), by = .(authorId, ym, word = lemma)]
+  rows[, .(doc_id, authorId, ym)][ann[, .(doc_id, lemma, token, upos)], on = "doc_id", nomatch = 0L][
+    , .(n = .N), by = .(authorId, ym, lemma, token, upos)]
 }
 
 chunks <- unname(split(word_docs, (seq_len(nrow(word_docs)) - 1L) %/% WORD_CHUNK_SIZE))
@@ -231,7 +286,7 @@ word_elapsed <- system.time(
   if (WORD_CORES > 1L) {
     cl <- parallel::makeCluster(WORD_CORES)
     word_parts <- tryCatch({
-      parallel::clusterExport(cl, c("ud_model_file", "KEEP_UPOS", "stopwords_hu"))
+      parallel::clusterExport(cl, c("ud_model_file", "KEEP_UPOS", "stopwords_set"))
       parallel::clusterEvalQ(cl, { library(data.table); library(udpipe); library(stringi) })
       parallel::parLapply(cl, chunks, tag_chunk)
     }, finally = parallel::stopCluster(cl))
@@ -241,7 +296,45 @@ word_elapsed <- system.time(
 )["elapsed"]
 cat("tagging done in ", round(word_elapsed), "s\n", sep = "")
 
-word_counts <- rbindlist(word_parts)[, .(n = sum(n)), by = .(authorId, ym, word)]
+# Combine the chunks into raw (authorId, ym, lemma, token, upos) counts.
+word_counts <- rbindlist(word_parts)[, .(n = sum(n)), by = .(authorId, ym, lemma, token, upos)]
+
+# Canonical word form. udpipe lemmas over-stem ("beke" -> "bek") and split a word
+# across several lemmas; replacing each lemma with the hunspell stem of its surface
+# token recovers the dictionary form and merges the splits. hunspell may return several
+# stems, so the one most frequent as a surface token wins (else the longest); tokens
+# hunspell does not know keep the udpipe lemma. Stemming is per distinct token and runs
+# once here, not per worker. A stopword re-check then drops forms that stemming turned
+# into stopwords ("bennunket" -> "en"), still keeping all-caps acronyms. A proper noun
+# (PROPN) is never lowercased into a common word -- "Nagy" the surname stays a name, not
+# "nagy" ("big") -- by rejecting such a stem in favour of the udpipe lemma.
+if (HUNSPELL_CANONICAL) {
+  hu_dict <- tryCatch(hunspell::dictionary(HUNSPELL_DICT),
+    error = function(e) stop("hunspell dictionary '", HUNSPELL_DICT, "' not available: ", conditionMessage(e)))
+  freq_of <- word_counts[, .(f = sum(n)), by = .(tl = stringi::stri_trans_tolower(token))][, setNames(f, tl)]
+  utok <- unique(word_counts$token)
+  stems <- hunspell::hunspell_stem(utok, dict = hu_dict)
+  d <- data.table(i = rep(seq_along(stems), lengths(stems)), stem = unlist(stems))
+  d[, L := nchar(stem)]
+  d[, f := unname(freq_of[stringi::stri_trans_tolower(stem)])][is.na(f), f := 0]
+  # Per token: the stem most frequent as a surface form, breaking ties by length.
+  setorder(d, i, -f, -L)
+  canon <- unique(d, by = "i")
+  canon_tok <- rep(NA_character_, length(utok)); canon_tok[canon$i] <- canon$stem
+  word_counts[data.table(token = utok, canon = canon_tok), canon := i.canon, on = "token"]
+  # Keep proper nouns from collapsing into a common word: for a PROPN whose stem merely
+  # lowercases a capitalised token ("Nagy" -> "nagy"), keep the udpipe lemma instead.
+  word_counts[, word := data.table::fifelse(
+    upos == "PROPN" & !is.na(canon) &
+      stringi::stri_detect_regex(token, "^\\p{Lu}") & stringi::stri_detect_regex(canon, "^\\p{Ll}"),
+    lemma, data.table::fifelse(is.na(canon), lemma, canon))]
+  word_counts <- word_counts[stringi::stri_detect_regex(token, "^\\p{Lu}{2,}$") |
+    !(stringi::stri_trans_tolower(word) %chin% stopwords_set)]
+  word_counts <- word_counts[, .(n = sum(n)), by = .(authorId, ym, word)]
+  rm(hu_dict, freq_of, utok, stems, d, canon, canon_tok)
+} else {
+  word_counts <- word_counts[, .(n = sum(n)), by = .(authorId, ym, word = lemma)]
+}
 # Denominator for relative frequencies: each cell's total content-word tokens (the
 # full filtered vocabulary, summed before the top-N cut -- so it includes the tail
 # that word_monthly drops and cannot be recovered from word_monthly alone).
@@ -252,7 +345,7 @@ word_counts[, rnk := frank(-n, ties.method = "min"), by = .(authorId, ym)]
 word_monthly <- word_counts[rnk <= TOP_WORDS_N, .(authorId, ym, word, n)][order(authorId, ym, -n, word)]
 cat("word_monthly: ", nrow(word_monthly), " rows across ",
   nrow(word_month_totals), " author-months\n", sep = "")
-rm(stopwords_hu, word_docs, chunks, word_parts, word_counts)
+rm(stopwords_set, word_docs, chunks, word_parts, word_counts)
 
 ###############################################################################
 # 4. CHILD-ROW STRIDES
