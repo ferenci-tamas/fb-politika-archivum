@@ -5,8 +5,9 @@
 // The archive stores, per author and year-month, that month's top words with raw
 // counts (see word_monthly in SQLite-converter.R). For one author this ranks words by
 // their summed monthly share (each month's n / that month's content-word tokens) so a
-// high-volume era cannot crowd out words that defined quieter periods, keeps the top
-// `limit`, and returns one series per word with a 0-filled point for every active
+// high-volume era cannot crowd out words that defined quieter periods -- while ignoring
+// near-empty months, so a single-token month cannot crown a one-off word -- keeps the
+// top `limit`, and returns one series per word with a 0-filled point for every active
 // month. An optional `selectMonths` restricts the ranking to a zoomed-in window while
 // every series still spans the full axis, so zooming re-picks the words without moving
 // the time axis.
@@ -22,9 +23,12 @@
  * @param {Iterable<string>|null} [selectMonths] when given, only these months count
  *   toward the ranking (the window the user zoomed to); every series still spans the
  *   full month axis.
+ * @param {number} [minSelectTokens] months with fewer than this many content-word tokens
+ *   are ignored when ranking, so a near-empty month cannot inflate a word's share (one
+ *   token would otherwise be a 100% month). Only affects share-based ranking.
  * @returns {{series:{label:string,total:number,color?:string,points:{ym:string,n:number,total:number}[]}[], months:string[]}}
  */
-export function shapeTopWords(rows, totalsByYm = null, limit = 10, selectMonths = null) {
+export function shapeTopWords(rows, totalsByYm = null, limit = 10, selectMonths = null, minSelectTokens = 0) {
   if (!rows || rows.length === 0) return { series: [], months: [] };
 
   const months = [...new Set(rows.map((r) => r.ym))].sort();
@@ -46,8 +50,15 @@ export function shapeTopWords(rows, totalsByYm = null, limit = 10, selectMonths 
     }
     arr[monthIndex.get(r.ym)] += n;
     if (!window || window.has(r.ym)) {
-      const mt = totalsByYm && totalsByYm.get ? totalsByYm.get(r.ym) : null;
-      score.set(r.word, (score.get(r.word) || 0) + (mt && mt > 0 ? n / mt : n));
+      if (totalsByYm && totalsByYm.get) {
+        // Share-based ranking, but skip months too sparse to be meaningful: one token
+        // would otherwise count as a 100% month and crown a one-off word (e.g. a lone
+        // "karácsony" in a month with almost no other content).
+        const mt = totalsByYm.get(r.ym);
+        if (mt && mt >= minSelectTokens) score.set(r.word, (score.get(r.word) || 0) + n / mt);
+      } else {
+        score.set(r.word, (score.get(r.word) || 0) + n); // no totals: rank by raw count
+      }
     }
   }
 

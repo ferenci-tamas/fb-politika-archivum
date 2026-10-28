@@ -1057,7 +1057,7 @@ function onWordsResult(msg) {
 function drawWordsChart() {
   if (!lastWords) return;
   const name = authorIdToName.get(lastWords.authorId) || '';
-  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, null);
+  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, null, WORD_RATIO_MIN_TOKENS);
   if (!series.length) {
     els.wordsStatus.textContent = `${name}: nincs megjeleníthető szó.`;
     els.wordsChart.replaceChildren();
@@ -1089,7 +1089,7 @@ function onWordsZoom(loMs, hiMs) {
       return t >= loMs && t <= hiMs;
     })
   );
-  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, windowMonths.size ? windowMonths : null);
+  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, windowMonths.size ? windowMonths : null, WORD_RATIO_MIN_TOKENS);
   if (!series.length) return;
   assignStableColors(series, wordColorMap);
   updateStackedSeries(series);

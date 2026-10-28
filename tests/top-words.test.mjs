@@ -94,6 +94,18 @@ test('with totals, selection ranks by summed monthly share, not raw count', () =
   assert.deepEqual(labels, ['rare']); // share .5 > .08, though count 5 < 8
 });
 
+test('minSelectTokens ignores near-empty months when ranking by share', () => {
+  const rows = [
+    { ym: '2020-01', word: 'oneoff', n: 1 }, // 1-token month -> share 1.0 without a floor
+    { ym: '2020-02', word: 'steady', n: 6 } // 60-token month -> share .1
+  ];
+  const totals = new Map([['2020-01', 1], ['2020-02', 60]]);
+  // No floor: the 1-token month gives 'oneoff' share 1.0, outranking 'steady'.
+  assert.deepEqual(shapeTopWords(rows, totals, 1).series.map((s) => s.label), ['oneoff']);
+  // Floor of 20 tokens: the 1-token month is ignored, so 'steady' wins.
+  assert.deepEqual(shapeTopWords(rows, totals, 1, null, 20).series.map((s) => s.label), ['steady']);
+});
+
 test('selectMonths restricts the ranking to a window but keeps the full month axis', () => {
   const rows = [
     { ym: '2020-01', word: 'early', n: 9 },
