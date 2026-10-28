@@ -3,44 +3,60 @@
 // stays unit-testable in Node.
 //
 // The archive stores, per author and year-month, that month's top words with raw
-// counts (see word_monthly in SQLite-converter.R). For one author this picks the
-// `limit` words with the highest total across all months and returns one series per
-// word, with a 0-filled point for every month the author was active — so the stacked
-// areas share a common, gap-free time axis and each month's stack sums to the stored
-// top words of that month.
+// counts (see word_monthly in SQLite-converter.R). For one author this ranks words by
+// their summed monthly share (each month's n / that month's content-word tokens) so a
+// high-volume era cannot crowd out words that defined quieter periods, keeps the top
+// `limit`, and returns one series per word with a 0-filled point for every active
+// month. An optional `selectMonths` restricts the ranking to a zoomed-in window while
+// every series still spans the full axis, so zooming re-picks the words without moving
+// the time axis.
 
 /**
  * @param {{ym:string, word:string, n:number}[]} rows one author's word_monthly rows
  * @param {Map<string,number>|null} [totalsByYm] ym -> that month's total content-word
- *   tokens (word_month_totals); sets each point's `total` so ratio mode can show the
- *   word's share of content words. When null, `total` falls back to the stack sum.
- * @param {number} [limit] how many words (series) to keep, by total count
- * @returns {{series:{label:string,total:number,points:{ym:string,n:number,total:number}[]}[], months:string[]}}
+ *   tokens (word_month_totals). Used both as the ratio-mode denominator (each point's
+ *   `total`) and, when present, as the ranking weight: words are scored by their summed
+ *   monthly share (n / month tokens) instead of raw count, so a high-volume era does not
+ *   crowd out words that defined quieter periods. Falls back to raw count when null.
+ * @param {number} [limit] how many words (series) to keep
+ * @param {Iterable<string>|null} [selectMonths] when given, only these months count
+ *   toward the ranking (the window the user zoomed to); every series still spans the
+ *   full month axis.
+ * @returns {{series:{label:string,total:number,color?:string,points:{ym:string,n:number,total:number}[]}[], months:string[]}}
  */
-export function shapeTopWords(rows, totalsByYm = null, limit = 10) {
+export function shapeTopWords(rows, totalsByYm = null, limit = 10, selectMonths = null) {
   if (!rows || rows.length === 0) return { series: [], months: [] };
 
   const months = [...new Set(rows.map((r) => r.ym))].sort();
   const monthIndex = new Map(months.map((ym, i) => [ym, i]));
+  const window = selectMonths ? (selectMonths instanceof Set ? selectMonths : new Set(selectMonths)) : null;
 
-  // Total per word, and each word's count in each month (0 where absent).
-  const totals = new Map();
+  // Per word: total raw count (series metadata), the ranking score (summed monthly
+  // share over the window), and the 0-filled monthly counts across the full axis.
+  const totalCount = new Map();
+  const score = new Map();
   const byWord = new Map();
   for (const r of rows) {
     const n = Number(r.n) || 0;
-    totals.set(r.word, (totals.get(r.word) || 0) + n);
+    totalCount.set(r.word, (totalCount.get(r.word) || 0) + n);
     let arr = byWord.get(r.word);
     if (!arr) {
       arr = new Array(months.length).fill(0);
       byWord.set(r.word, arr);
     }
     arr[monthIndex.get(r.ym)] += n;
+    if (!window || window.has(r.ym)) {
+      const mt = totalsByYm && totalsByYm.get ? totalsByYm.get(r.ym) : null;
+      score.set(r.word, (score.get(r.word) || 0) + (mt && mt > 0 ? n / mt : n));
+    }
   }
 
-  // The `limit` highest-total words; ties broken by word for a stable order.
-  const topWords = [...totals.keys()]
-    .sort((a, b) => totals.get(b) - totals.get(a) || (a < b ? -1 : a > b ? 1 : 0))
-    .slice(0, limit);
+  // The `limit` highest-scoring words; ties broken by word for a stable order. If the
+  // window contained no rows, fall back to ranking every word by its total count.
+  const byScore = (a, b) => score.get(b) - score.get(a) || (a < b ? -1 : a > b ? 1 : 0);
+  const byCount = (a, b) => totalCount.get(b) - totalCount.get(a) || (a < b ? -1 : a > b ? 1 : 0);
+  const ranked = score.size ? [...score.keys()].sort(byScore) : [...totalCount.keys()].sort(byCount);
+  const topWords = ranked.slice(0, limit);
 
   // Per-month stacked total over the kept words (fallback denominator).
   const monthStackTotal = new Array(months.length).fill(0);
@@ -60,7 +76,7 @@ export function shapeTopWords(rows, totalsByYm = null, limit = 10) {
     const arr = byWord.get(word);
     return {
       label: word,
-      total: totals.get(word),
+      total: totalCount.get(word),
       points: months.map((ym, i) => ({ ym, n: arr[i], total: denom[i] }))
     };
   });

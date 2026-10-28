@@ -13,7 +13,8 @@ import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToD
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
-import { renderLineChart, preloadChart, WORD_RATIO_MIN_TOKENS } from './ui/line-chart.js';
+import { renderLineChart, preloadChart, WORD_RATIO_MIN_TOKENS, updateStackedSeries, assignStableColors } from './ui/line-chart.js';
+import { shapeTopWords } from './lib/top-words.js';
 import { el } from './ui/dom.js';
 import { encodeViewToHash, decodeHashToView, encodeAnalysisToHash, decodeHashToAnalysis } from './lib/url-state.js';
 import { marked } from 'marked';
@@ -660,7 +661,9 @@ let linkReqId = 0;
 let lastLink = null; // cached { series } for the link-availability view (static per session)
 let wordsReqId = 0;
 let wordsAuthorId = null; // single selected author for the top-words view, or null
-let lastWords = null; // cached { authorId, series } for the current author selection
+let lastWords = null; // cached { authorId, rows, totals } for the current author selection
+const WORDS_LIMIT = 10; // words (series) shown in the top-words chart
+const wordColorMap = new Map(); // stable word -> colour for the current author's chart
 let wordsAvailable = false; // set from the 'ready' message (word_monthly, schema_version >= 3)
 let wordsRatioAvailable = false; // set from 'ready' (word_month_totals present)
 
@@ -1035,26 +1038,32 @@ function runWords() {
 }
 
 function onWordsResult(msg) {
-  if (msg.series === null) {
+  if (msg.rows == null) {
     // The archive predates word_monthly (schema_version < 3): no data to show.
     lastWords = null;
     els.wordsStatus.textContent = 'Ehhez a nézethez frissített adatbázis szükséges — a szógyakoriságok még nincsenek az archívumban.';
     els.wordsChart.replaceChildren();
     return;
   }
-  lastWords = { authorId: wordsAuthorId, series: msg.series };
+  const totals = msg.totals ? new Map(msg.totals.map((t) => [t.ym, Number(t.tokens)])) : null;
+  lastWords = { authorId: wordsAuthorId, rows: msg.rows, totals };
+  wordColorMap.clear(); // new author — reset the stable colour assignment
   drawWordsChart();
 }
 
+// Full-range render (the default overview). Words are ranked by summed monthly share
+// over the whole period; zooming the time axis re-picks them for the visible window
+// (onWordsZoom) in place, without re-initialising the chart.
 function drawWordsChart() {
   if (!lastWords) return;
-  const series = lastWords.series;
   const name = authorIdToName.get(lastWords.authorId) || '';
+  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, null);
   if (!series.length) {
     els.wordsStatus.textContent = `${name}: nincs megjeleníthető szó.`;
     els.wordsChart.replaceChildren();
     return;
   }
+  assignStableColors(series, wordColorMap);
   const ratio = wordsRatioAvailable && els.wordsRatio.checked;
   els.wordsStatus.textContent = `${name} — ${series.length} leggyakoribb szó`;
   renderLineChart(els.wordsChart, series, {
@@ -1064,9 +1073,26 @@ function drawWordsChart() {
     title: `${name} leggyakoribb szavai havonta`,
     subtitle: ratio
       ? '(havi előfordulás a tartalmas szavak arányában)'
-      : '(a szerző összességében leggyakoribb szavai, havi előfordulás)',
-    ariaLabel: `${name} leggyakrabban használt szavainak havi ${ratio ? 'aránya a tartalmas szavakhoz képest' : 'előfordulása'}, egymásra rétegzett területdiagramon`
+      : '(a havi arányok összege szerinti leggyakoribb szavak)',
+    ariaLabel: `${name} leggyakrabban használt szavainak havi ${ratio ? 'aránya a tartalmas szavakhoz képest' : 'előfordulása'}, egymásra rétegzett területdiagramon`,
+    onZoomRange: onWordsZoom
   });
+}
+
+// On zoom, re-rank the words by summed monthly share over just the visible months and
+// swap the series in place (keeping the zoom and each surviving word's colour).
+function onWordsZoom(loMs, hiMs) {
+  if (!lastWords) return;
+  const windowMonths = new Set(
+    [...new Set(lastWords.rows.map((r) => r.ym))].filter((ym) => {
+      const t = Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1, 1);
+      return t >= loMs && t <= hiMs;
+    })
+  );
+  const { series } = shapeTopWords(lastWords.rows, lastWords.totals, WORDS_LIMIT, windowMonths.size ? windowMonths : null);
+  if (!series.length) return;
+  assignStableColors(series, wordColorMap);
+  updateStackedSeries(series);
 }
 
 function onWordsError(msg) {

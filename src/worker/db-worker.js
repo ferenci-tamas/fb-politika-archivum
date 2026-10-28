@@ -25,7 +25,6 @@ import { buildFtsMatch } from '../lib/fts-query.js';
 import { parseImages, parseLinks } from '../lib/sanitize.js';
 import * as Q from '../lib/queries.js';
 import { bucketByMonth, monthTotals } from '../lib/monthly.js';
-import { shapeTopWords } from '../lib/top-words.js';
 import { prefetchHydrationPages } from '../lib/btree.js';
 import { makeMultiRangeFetcher } from './multirange.js';
 import { BLOCK_SIZE, MULTIRANGE_PREFETCH, PREFETCH_BUDGET_MS } from '../lib/constants.js';
@@ -338,17 +337,17 @@ function handleLinkAvailability(msg) {
 }
 
 // Most frequent words for one author: the stored per-month top words (word_monthly,
-// schema_version 3), shaped into stacked-area series (the author's overall top words,
-// 0-filled across their active months). One contiguous range read of word_monthly;
-// the posts rows are never touched. `series` is null when the archive predates the
-// table (schema_version < 3) — the UI then shows a "needs a rebuild" notice.
+// schema_version 3) and their monthly token totals, returned raw for the main thread to
+// shape (and re-shape on zoom). One contiguous range read of word_monthly; the posts
+// rows are never touched. `rows` is null when the archive predates the table
+// (schema_version < 3) — the UI then shows a "needs a rebuild" notice.
 function handleTopWords(msg) {
   if (!ready) {
     self.postMessage({ type: 'top-words-error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
     return;
   }
   if (!wordsAvailable) {
-    self.postMessage({ type: 'top-words-result', reqId: msg.reqId, series: null });
+    self.postMessage({ type: 'top-words-result', reqId: msg.reqId, rows: null });
     return;
   }
   try {
@@ -356,18 +355,18 @@ function handleTopWords(msg) {
     const beforeBytes = vfs.getStats().bytesFetched;
     const authorId = Number(msg.authorId);
     if (!Number.isFinite(authorId)) {
-      self.postMessage({ type: 'top-words-result', reqId: msg.reqId, series: [], fetchedBytes: 0 });
+      self.postMessage({ type: 'top-words-result', reqId: msg.reqId, rows: [], totals: null, fetchedBytes: 0 });
       return;
     }
+    // Send the raw per-month rows and token totals; the main thread shapes them (and
+    // re-shapes on zoom) so re-selecting the words needs no worker round-trip.
     const rows = Q.topWordsByAuthor(db, authorId);
-    const totals = wordsRatioAvailable
-      ? new Map(Q.topWordTotalsByAuthor(db, authorId).map((r) => [r.ym, r.tokens]))
-      : null;
-    const { series } = shapeTopWords(rows, totals, msg.limit || 10);
+    const totals = wordsRatioAvailable ? Q.topWordTotalsByAuthor(db, authorId) : null;
     self.postMessage({
       type: 'top-words-result',
       reqId: msg.reqId,
-      series,
+      rows,
+      totals,
       fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
     });
   } catch (err) {

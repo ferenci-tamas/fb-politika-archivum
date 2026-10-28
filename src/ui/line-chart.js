@@ -42,7 +42,8 @@ const STACK_COLORS = [
 const GRID_TOP = 40;
 
 let chartInstance = null;
-let last = null; // { container, series, ariaLabel, mode } — for re-theme / export
+let last = null; // { container, series, ariaLabel, mode, ... } — for re-theme / export
+let zoomTimer = null; // debounce for the stacked-chart zoom-recompute callback
 
 /**
  * Convert one phrase's monthly buckets to ECharts data items. Pure (no DOM/ECharts),
@@ -80,6 +81,42 @@ function escHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// The ECharts `series` array, shared by the initial render and the in-place stacked
+// update (a zoom recompute) so both map points to items identically.
+function seriesOption(series, mode, stack, minTotal) {
+  return series.map((s) => ({
+    type: 'line',
+    name: s.label,
+    data: toSeriesData(s.points, mode, minTotal),
+    showSymbol: false,
+    connectNulls: false,
+    lineStyle: { width: stack ? 1 : 2 },
+    ...(stack ? { stack: 'total', areaStyle: {}, emphasis: { focus: 'series' } } : {})
+  }));
+}
+
+// Colours. Stacked word series may carry a stable per-word `color` (see
+// assignStableColors) so re-selecting on zoom never recolours the bands that stayed;
+// other charts cycle the palette by position.
+function colorOption(series, stack) {
+  if (!stack) return COLORS;
+  return series.map((s, i) => s.color || STACK_COLORS[i % STACK_COLORS.length]);
+}
+
+// Assign a stable colour per word label into `colorMap`, reused across zoom re-selects
+// so a word keeps its colour whenever it is shown. New words take the next palette slot.
+export function assignStableColors(series, colorMap) {
+  for (const s of series) {
+    let c = colorMap.get(s.label);
+    if (!c) {
+      c = STACK_COLORS[colorMap.size % STACK_COLORS.length];
+      colorMap.set(s.label, c);
+    }
+    s.color = c;
+  }
+  return series;
+}
+
 function buildOption(series, ariaLabel, mode, stack, minTotal = MIN_TOTAL_FOR_RATIO) {
   const muted = cssVar('--muted', '#5b636e');
   const border = cssVar('--border', '#d4d8de');
@@ -88,7 +125,7 @@ function buildOption(series, ariaLabel, mode, stack, minTotal = MIN_TOTAL_FOR_RA
   const ratio = mode === 'ratio';
   return {
     aria: { enabled: true, label: { enabled: true, description: ariaLabel } },
-    color: stack ? STACK_COLORS : COLORS,
+    color: colorOption(series, stack),
     legend: {
       show: series.length > 1, // a single curve needs no legend
       type: 'scroll',
@@ -162,15 +199,7 @@ function buildOption(series, ariaLabel, mode, stack, minTotal = MIN_TOTAL_FOR_RA
       axisLabel: { color: muted, formatter: ratio ? '{value}%' : undefined },
       splitLine: { lineStyle: { color: border } }
     },
-    series: series.map((s) => ({
-      type: 'line',
-      name: s.label,
-      data: toSeriesData(s.points, mode, minTotal),
-      showSymbol: false,
-      connectNulls: false,
-      lineStyle: { width: stack ? 1 : 2 },
-      ...(stack ? { stack: 'total', areaStyle: {}, emphasis: { focus: 'series' } } : {})
-    }))
+    series: seriesOption(series, mode, stack, minTotal)
   };
 }
 
@@ -248,6 +277,7 @@ function exportChartPng() {
 }
 
 function disposeChart() {
+  clearTimeout(zoomTimer);
   if (chartInstance) {
     chartInstance.dispose();
     chartInstance = null;
@@ -275,7 +305,7 @@ export function preloadChart() {
  * @param {{label:string, points:{ym:string,n:number,total:number}[]}[]} series
  * @param {{ariaLabel?:string, mode?:'count'|'ratio'}} [opts]
  */
-export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '', stack = false, minTotalForRatio = MIN_TOTAL_FOR_RATIO } = {}) {
+export async function renderLineChart(container, series, { ariaLabel, mode = 'count', title = '', subtitle = '', stack = false, minTotalForRatio = MIN_TOTAL_FOR_RATIO, onZoomRange = null } = {}) {
   if (!container) return;
   disposeChart();
   if (!series || series.length === 0) {
@@ -283,7 +313,7 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     clear(container);
     return;
   }
-  last = { container, series, ariaLabel, mode, title, subtitle, stack, minTotalForRatio };
+  last = { container, series, ariaLabel, mode, title, subtitle, stack, minTotalForRatio, onZoomRange };
 
   let echarts;
   try {
@@ -305,9 +335,54 @@ export async function renderLineChart(container, series, { ariaLabel, mode = 'co
     container.append(host);
     chartInstance = echarts.init(host, null, { renderer: 'canvas', locale: 'HU' });
     chartInstance.setOption(buildOption(series, ariaLabel, mode, stack, minTotalForRatio), true);
+    if (onZoomRange) attachZoomListener(onZoomRange);
   } catch {
     showMessage(container, 'A grafikon megjelenítése nem sikerült.');
   }
+}
+
+function ymToTs(ym) {
+  return Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1, 1);
+}
+
+// The current zoom window as [startMs, endMs]. Prefers ECharts' value bounds; falls
+// back to mapping the percent range onto the full data extent taken from the series.
+function currentZoomRange() {
+  const dz = (chartInstance.getOption().dataZoom || [])[0] || {};
+  if (dz.startValue != null && dz.endValue != null) return [dz.startValue, dz.endValue];
+  const pts = last && last.series && last.series[0] && last.series[0].points;
+  if (!pts || pts.length === 0) return null;
+  const lo = ymToTs(pts[0].ym);
+  const hi = ymToTs(pts[pts.length - 1].ym);
+  const s = dz.start == null ? 0 : dz.start;
+  const e = dz.end == null ? 100 : dz.end;
+  return [lo + (s / 100) * (hi - lo), lo + (e / 100) * (hi - lo)];
+}
+
+// Debounced: on a zoom gesture, hand the visible [startMs, endMs] to the callback so the
+// caller can re-pick the stacked words for that window.
+function attachZoomListener(cb) {
+  chartInstance.on('dataZoom', () => {
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => {
+      if (!chartInstance) return;
+      const range = currentZoomRange();
+      if (range) cb(range[0], range[1]);
+    }, 180);
+  });
+}
+
+/**
+ * Replace the stacked chart's series in place (after a zoom recomputes which words to
+ * show) without re-initialising, so the zoom window and the axis are preserved.
+ */
+export function updateStackedSeries(series) {
+  if (!chartInstance || !last) return;
+  last.series = series;
+  chartInstance.setOption(
+    { color: colorOption(series, true), series: seriesOption(series, last.mode, true, last.minTotalForRatio) },
+    { replaceMerge: ['series'] }
+  );
 }
 
 // Keep the chart responsive and in sync with the OS light/dark setting. Guarded so
@@ -323,7 +398,7 @@ if (typeof window !== 'undefined') {
   const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   if (mq && mq.addEventListener) {
     mq.addEventListener('change', () => {
-      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle, stack: last.stack, minTotalForRatio: last.minTotalForRatio });
+      if (last) renderLineChart(last.container, last.series, { ariaLabel: last.ariaLabel, mode: last.mode, title: last.title, subtitle: last.subtitle, stack: last.stack, minTotalForRatio: last.minTotalForRatio, onZoomRange: last.onZoomRange });
     });
   }
 }

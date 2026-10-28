@@ -83,3 +83,26 @@ test('a missing/zero monthly total falls back to that month stack sum', () => {
   assert.equal(a.points[0].total, 100);
   assert.equal(a.points[1].total, 2); // fallback: only 'a' present, stack sum = 2
 });
+
+test('with totals, selection ranks by summed monthly share, not raw count', () => {
+  const rows = [
+    { ym: '2020-01', word: 'rare', n: 5 }, // small month -> high share
+    { ym: '2020-02', word: 'common', n: 8 } // big month -> lower share
+  ];
+  const totals = new Map([['2020-01', 10], ['2020-02', 100]]); // shares .5 vs .08
+  const labels = shapeTopWords(rows, totals, 1).series.map((s) => s.label);
+  assert.deepEqual(labels, ['rare']); // share .5 > .08, though count 5 < 8
+});
+
+test('selectMonths restricts the ranking to a window but keeps the full month axis', () => {
+  const rows = [
+    { ym: '2020-01', word: 'early', n: 9 },
+    { ym: '2020-02', word: 'late', n: 9 },
+    { ym: '2020-01', word: 'late', n: 1 }
+  ];
+  // Over all months 'late' (10) outranks 'early' (9); restricted to 2020-01, 'early' wins.
+  const r = shapeTopWords(rows, null, 1, ['2020-01']);
+  assert.deepEqual(r.series.map((s) => s.label), ['early']);
+  assert.deepEqual(r.months, ['2020-01', '2020-02']); // full axis retained
+  assert.deepEqual(r.series[0].points.map((p) => p.ym), ['2020-01', '2020-02']);
+});
