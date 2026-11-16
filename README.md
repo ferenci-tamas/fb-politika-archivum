@@ -147,9 +147,19 @@ A következő táblázat mutatja az archivált oldalak legfontosabb adatait (a n
 
 </details>
 
+## Mit tegyek, ha szeretnék én is hozzájárulni ezen adatok biztonságos megőrzéséhez az utókor számára?
+
+A válasz nagyon egyszerű: töltsd le az SQLite formátumú adatbázist! [Ezen a linken](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) megteheted; a mérete jelenleg kb. 799 MB. Ez az adatbázis tartalmazza az összes szöveges adatot (ezen túl pedig a hivatkozásokat a képekre, amik maguk nem részei az adatbázisnak, méretük miatt). Ezen felül, ha használsz Github-ot, érdemes lehet fork-olni ezt a repozitóriumot is (vagy [letölteni ZIP-ben](https://github.com/ferenci-tamas/fb-politika-archivum/archive/refs/heads/main.zip)).
+
+Hogy miért jó mindez? A digitális archiválás – de igazából minden típusú archiválás – egyik alapmegállapítása, hogy egy anyag annál biztonságosabban van megőrizve, minél több, egymástól független (más helyen, más által őrzött) példányban van meg. (Egy amerikai projekt a nevét is erről kapta: LOCKSS – “lots of copies keep stuff safe”, nagyjából: sok másolattal biztonságban vannak a dolgok). Ezért jó, ha az adatbázis minél több helyen, minél több embernél megvan. (Ilyenkor a hitelesség kérdése fontossá válik, erre mindjárt kitérek.)
+
 ## Technikai részletek
 
-A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy SQLite adatbázist készítettem (az ehhez használt [szkriptből](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/SQLite-converter.R) a tábla formátuma is látható). Az adatbázist és a képeket Cloudflare R2-n tároltam. A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 segítségével végeztem (a transzparencia érdekében a használt [promptot](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/DOCUMENTATION.md) fájlban érhető el.
+A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy [SQLite](https://en.wikipedia.org/wiki/SQLite) formátumú adatbázist készítettem (az ehhez használt [szkriptből](SQLite-converter.R) a tábla formátuma is látható). Az SQLite azért célszerű választás, mert jól standardizált, széleskörben használt formátum, ami [kifejezetten ajánlott](https://sqlite.org/locrsf.html) adatbázisok hosszútávú megőrzéséhez. (Ez azért fontos, nehogy a jövőben az legyen a probléma, hogy hiába is van meg az adat, a formátuma nem ismert.)
+
+Az adatbázist és a képeket [Cloudflare R2](https://www.cloudflare.com/products/r2/)-n tároltam.
+
+A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 segítségével végeztem (a transzparencia érdekében a használt [promptot](prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](DOCUMENTATION.md) fájlban érhető el.
 
 ## Az archívum hitelesítése
 
