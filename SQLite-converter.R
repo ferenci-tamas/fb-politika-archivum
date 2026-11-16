@@ -127,8 +127,6 @@ posts <- toconvert$posts[, .(postId = as.character(postId), authorname = as.char
 links <- toconvert$links[, .(postId = as.character(postId), link = as.character(link), available = as.integer(available))][order(postId)]
 images <- toconvert$media[media_type == "Photo" & !is.na(filename), .(postId = as.character(postId), filename = as.character(filename))][order(postId)]
 
-rm(toconvert)
-
 # Searched and displayed text is stored in Unicode NFC. Browsers send NFC, and a
 # diacritic-sensitive index would not match a decomposed "o" + U+0308 to "ö".
 # NFC is canonically equivalent, i.e. it renders identically. URLs and file
@@ -1194,3 +1192,27 @@ if (SPLIT_FOR_CDN) local({
   cat("Wrote ", length(parts), " parts (", paste(round(sizes / 1e6, 1), collapse = " + "), " MB) and manifest.json to ",
     version_dir, "; latest.json points to ", built_at, "; ", OUTPUT_FILE, " kept\n", sep = "")
 })
+
+###############################################################################
+# 16. README
+#
+# README.md is generated from README.Rmd, whose statistics (counts, time range,
+# posts per author) are read from OUTPUT_FILE, so they describe exactly this
+# build. It is rendered in a fresh R session, just as when README.Rmd is knitted
+# on its own (e.g. after editing its text), so it cannot come to depend on the
+# objects of this script. Needs pandoc: Positron and RStudio provide it; outside
+# them, put it on the PATH or point RSTUDIO_PANDOC to it. Commit the new
+# README.md once the build is uploaded.
+###############################################################################
+
+RENDER_README <- TRUE
+README_RMD <- "README.Rmd"
+
+if (RENDER_README) {
+  if (!requireNamespace("callr", quietly = TRUE) || !requireNamespace("rmarkdown", quietly = TRUE)) {
+    stop("Packages callr and rmarkdown are needed to render ", README_RMD, ".")
+  }
+  readme <- callr::r(function(input, toconvert) rmarkdown::render(input, params = list(toconvert = toconvert)),
+    args = list(README_RMD, toconvert))
+  cat("Wrote ", readme, " from ", README_RMD, ")\n", sep = "")
+}

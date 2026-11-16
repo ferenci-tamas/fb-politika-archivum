@@ -15,6 +15,9 @@ archive.sqlite
 archive.sqlite-*
 archive-parts/
 toconvert.rds
+files1.csv
+files2.csv
+README.html
 
 # udpipe model(s) downloaded by SQLite-converter.R for the top-words view.
 udpipe-models/

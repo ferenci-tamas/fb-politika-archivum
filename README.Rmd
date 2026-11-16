@@ -1,0 +1,104 @@
+---
+output:
+  github_document:
+    pandoc_args: --wrap=preserve
+params:
+  toconvert: null
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(data.table)
+
+toconvert <- params$toconvert
+
+posts <- toconvert$posts
+links <- toconvert$links
+images <- toconvert$media[media_type == "Photo"]
+videos <- toconvert$media[media_type == "Video"]
+
+downloaded_files <- rbind(fread("files1.csv"), fread("files2.csv"))
+
+images <- merge(images, downloaded_files, by = "filename", sort = FALSE)
+videos <- merge(videos, downloaded_files, by = "filename", sort = FALSE)
+
+posts <- merge(posts, images[, .(nImage = .N, sizeImage = sum(size, na.rm = TRUE)), .(postId)], by = "postId", all.x = TRUE, sort = FALSE)
+posts <- merge(posts, videos[, .(nVideo = .N, sizeVideo = sum(size, na.rm = TRUE)), .(postId)], by = "postId", all.x = TRUE, sort = FALSE)
+posts <- merge(posts, links[, .(nLink = .N), .(postId)], by = "postId", all.x = TRUE, sort = FALSE)
+
+# Formatted as on the website (src/lib/format.js): Hungarian local time, digits
+# grouped with non-breaking spaces.
+months_hu <- c("január", "február", "március", "április", "május", "június",
+  "július", "augusztus", "szeptember", "október", "november", "december")
+local_time <- function(x) as.POSIXlt(as.POSIXct(x, tz = "UTC"), tz = "Europe/Budapest")
+fmt_date <- function(x) format(local_time(x), "%Y. %m. %d.")
+fmt_date_long <- function(x) {
+  t <- local_time(x)
+  sprintf("%d. %s %d.", t$year + 1900L, months_hu[t$mon + 1L], t$mday)
+}
+fmt_count <- function(x) formatC(x, format = "d", big.mark = "\u00a0")
+```
+
+<!-- FIGYELEM: a fájl NEM szerkeszthető közvetlenül, csak a README.Rmd fájlon keresztül!
+Fordítás: callr::r(function(input, toconvert) rmarkdown::render(input, params = list(toconvert = toconvert)), args = list("README.Rmd", toconvert)) -->
+
+# Magyar közéleti és politikai Facebook-posztok kereshető archívuma, 2008–2026
+
+Összeállította: Ferenci Tamás (<https://www.medstat.hu/>)
+
+## Az archívum weboldala
+
+Az adatokat kereshető, szűrhető, rendezhető formában megjelenítő weboldal a <https://ferenci-tamas.github.io/fb-politika-archivum/> címen érhető el. Itt -- az elemzési lehetőségeket illusztrálandó -- néhány egyszerűbb elemzés is megtalálható, melyek az adatok interaktív vizsgálatát, ábrázolását teszik lehetővé néhány releváns szempont mentén.
+
+## Adatok elérhetősége
+
+A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a weboldalon, hanem nyers, gépi úton feldolgozható formátumban is elérhetővé teszem. Az adatok letölthetőek [SQLite](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) adatbázisként (mely minden táblát tartalmaz), vagy táblánként külön-külön, CSV formátumban: [posztok](https://fb-politika-archivum.medstat.hu/database/posts.csv), [linkek](https://fb-politika-archivum.medstat.hu/database/links.csv), illetve [képek](https://fb-politika-archivum.medstat.hu/database/images.csv). A képek fájlnév alapján a `https://fb-politika-archivum.medstat.hu/images/<kep>` címen érhetőek el (ahol a `<kep>` a fájlnevet jelenti).
+
+## Az archívum tartalma
+
+Az archívum `r fmt_count(nrow(posts))` posztot tartalmaz `r fmt_count(uniqueN(posts$authorName))` szerzőtől; az első archivált poszt dátuma `r fmt_date_long(min(posts$time))`, az utolsóé `r fmt_date_long(max(posts$time))` (a cél a kezdetektől 2026 április közepéig történő archiválás volt). A posztokban összesen `r fmt_count(nrow(images))` kép (együttes méretük: `r round(sum(posts$sizeImage, na.rm = TRUE)/1024/1024)` GB), `r fmt_count(nrow(videos))` videó (együttes méretük: `r round(sum(posts$sizeVideo, na.rm = TRUE)/1024/1024)` GB) és `r fmt_count(nrow(links))` link található.
+
+A következő táblázat mutatja az archivált oldalak legfontosabb adatait (a nyílra kattintva megjeleníthető/elrejthető a táblázat).
+
+```{=html}
+<details>
+<summary>Archivált oldalak adatai</summary>
+```
+
+```{r authors}
+knitr::kable(
+  posts[, .(mindate = fmt_date(min(time)), maxdate = fmt_date(max(time)), postcount = fmt_count(.N),
+          nImage = fmt_count(sum(nImage, na.rm = TRUE)), sizeImageMB = round(sum(sizeImage, na.rm = TRUE)/1024, 1),
+          nVideo = fmt_count(sum(nVideo, na.rm = TRUE)), sizeVideoGB = round(sum(sizeVideo, na.rm = TRUE)/1024/1024, 1),
+          nLink = fmt_count(sum(nLink, na.rm = TRUE))),
+      .(authorName)][order(authorName)],
+  col.names = c("Szerző", "Első poszt dátuma", "Utolsó poszt dátuma", "Posztok száma", "Képek száma", "Képek mérete [MB]",
+    "Videók száma", "Videók mérete [GB]", "Linkek száma"),
+  align = "lllrrrrrr"
+)
+```
+
+```{=html}
+</details>
+```
+
+## Technikai részletek
+
+A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy SQLite adatbázist készítettem (az ehhez használt [szkriptből](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/SQLite-converter.R) a tábla formátuma is látható). Az adatbázist és a képeket Cloudflare R2-n tároltam. A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 segítségével végeztem (a transzparencia érdekében a használt [promptot](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/DOCUMENTATION.md) fájlban érhető el.
+
+## Ismert problémák
+
+- A mostani helyett teljes értékűbb lehetne egy Cloudflare D1 + Cloudflare Worker megoldás (csak ahhoz a free tier kevés, már közepes terhelésnél is).
+- Ha egy posztnak két szerzője is van (mint például [ennek](https://www.facebook.com/FideszHU/posts/pfbid02uGZj93NBxpGixjZQAtrbAo3AeL1i9BHuyjXMojMxnqjUNWUHaxxPmFC5FTHWEoy3l)), akkor csak az egyiknél jelenik meg. Így a szerzőség nem tökéletes, de cserében nincsenek posztbeli duplikálódások.
+- Képek lehetnének jobb minőségűek is (a scrape-elés sajnos csak a rosszabb minőséget hozta).
+- Az URL jelenlegi elérhetőségének vizsgálata nem tökéletes: ha redirectel, de valami teljesen másra, az is jónak fog tűnni.
+
+## Továbbfejlesztési lehetőségek
+
+- Videók kérdése (1,5 TB, ennek érdemi költsége lenne zero egress cost-tal együtt is, pusztán tárhely miatt).
+- Fényképek leírása, videók feliratozása (majd szöveges vizsgálatok ezek alapján is).
+- Politikusok csoportosítása politikai pártok, politikai pártok csoportosítása kormányzat/ellenzék státusz szerint és politikai nézetrendszer szerint (ez utóbbi kérdőjeles, mert szemben az előbbi kettővel, nem tökéletesen objektív).
+- Vector database alkalmazása?
+- Spline simítás alkalmazása a grafikonokon a havi bontás helyett.
+- Videók -- esetleg képek -- integritásvizsgálata (esetleges letöltési hibákra tekintettel).
