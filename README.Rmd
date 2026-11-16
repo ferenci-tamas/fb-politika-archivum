@@ -87,6 +87,21 @@ knitr::kable(
 
 A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy SQLite adatbázist készítettem (az ehhez használt [szkriptből](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/SQLite-converter.R) a tábla formátuma is látható). Az adatbázist és a képeket Cloudflare R2-n tároltam. A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 segítségével végeztem (a transzparencia érdekében a használt [promptot](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](https://github.com/ferenci-tamas/fb-politika-archivum/blob/main/DOCUMENTATION.md) fájlban érhető el.
 
+## Az archívum hitelesítése
+
+Digitális archívumoknál fontos kérdés a hitelesség is, tehát annak garantálása, hogy a tartalma valóban megfelel az archivált oldalak archiváláskori állapotának, azt nem módosították utólag. E cél elérése érdekében közzéteszem az `archive.sqlite` összes publikált változatának [MD5 lenyomatát](https://en.wikipedia.org/wiki/MD5), ami lehetővé teszi ezt a hitelesítést: ha valaki egy olyan fájllal találkozik, ami azt állítja magáról, hogy ez az archívum, akkor nincs más dolga, mint kiszámolni a lenyomatát, és összevetni a lenti táblázatban szereplő értékkel. (Az ilyen lenyomatoknak ugyanis megvan az a tulajdonságuk, hogy ha módosítják a fájlt, akkor praktikusan nulla annak a valószínűsége, hogy a lenyomat nem változik, és szintén lényegében lehetetlen célirányosan keresni olyan hamisított fájlt, aminek pont egy adott érték lenne a lenyomata.)
+
+```{r integrity}
+knitr::kable(
+  rbindlist(lapply(paste0(list.dirs("./archive-parts/", recursive = FALSE)[list.dirs("./archive-parts/", recursive = FALSE) != "./archive-parts/1790839585"], "/manifest.json"),
+  function(x) with(jsonlite::read_json(x), data.table(timestamp = builtAt, size = size, md5 = md5)))),
+  col.names = c("Időbélyeg", "Méret", "MD5 lenyomat"),
+  align = "ccc"
+)
+```
+
+(Szigorúan véve ez csak azt akadályozza meg, hogy *más* meghamisítsa az archívumot, azt nem, hogy *én* megtegyem ezt (hiszen én tudnék hamisított MD5 lenyomatot gyártani a hamisított archívumhoz). Ez ellen az jelent védelmet, hogy az `archive.sqlite` tartalmazza minden poszt egyedi azonosítóját, tehát ha ilyen vita támadna, akkor azt ugyan a vitatkozó felek maguk nem tudnák eldönteni, de a Meta -- hacsak nem feltételezzük, hogy összeesküdött valamelyik féllel -- igen, hiszen náluk is megvannak a posztok és az azonosítók, így eldönthető, hogy adott azonosító létezik-e, illetve mi van a hozzá tartozó posztban.)
+
 ## Ismert problémák
 
 - A mostani helyett teljes értékűbb lehetne egy Cloudflare D1 + Cloudflare Worker megoldás (csak ahhoz a free tier kevés, már közepes terhelésnél is).
