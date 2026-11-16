@@ -50,13 +50,15 @@ A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a webold
 
 ## Az archívum tartalma
 
-Az archívum `r fmt_count(nrow(posts))` posztot tartalmaz `r fmt_count(uniqueN(posts$authorName))` szerzőtől; az első archivált poszt dátuma `r fmt_date_long(min(posts$time))`, az utolsóé `r fmt_date_long(max(posts$time))` (a cél a kezdetektől 2026. április közepéig történő archiválás volt). A posztokban összesen `r fmt_count(nrow(images))` kép (együttes méretük: `r round(sum(posts$sizeImage, na.rm = TRUE)/1024/1024)` GB), `r fmt_count(nrow(videos))` videó (együttes méretük: `r round(sum(posts$sizeVideo, na.rm = TRUE)/1024/1024)` GB) és `r fmt_count(nrow(links))` link található.
+Az archívum tartalmának meghatározásához két dolgot kell definiálnunk: az időbeli lehatárolást és a gyűjtött adatok (jelen esetben Facebook-oldalak) körét. Kezdjük az előbbivel: a célom a kezdetektől 2026. április közepéig történő gyűjtés volt. A kezdőpont nem igényel magyarázatot, a végpont sem sokat: az archiválás vége a 2026-os országgyűlési választásokhoz kötődik (azzal a kitétellel, amit az oldal bevezetőjében is írtam: remélem, hogy ez csak a kezdet, egy ötlet felvetése, és mások, esetleg hivatalos szervek -- könyvtárak, levéltárak -- továbbviszik ezt a projektet, és így a 2026. április utáni helyzetről is lesz archívumunk).
 
-A következő táblázat mutatja az archivált oldalak legfontosabb adatait (a nyílra kattintva megjeleníthető/elrejthető a táblázat).
+A gyűjtött Facebook-oldalak körének meghatározása keményebb dió volt. Kik azok a politikusok, akik elég "fontosak" ahhoz, hogy érdemes legyen az oldalukat archiválni? A legfontosabb célkitűzésem a teljességre törekvés, az átfogó gyűjtés volt, ezt egészítette ki az a szempont, hogy mindennek a kritériumai a lehető legobjektívebbek legyenek (tehát a fontosságot valamilyen rajtam kívül álló szempont határozza meg, ne az én döntésemen múljon). A kormánypártok esetén ez egyszerűbb volt, hiszen ott a pozíció jól meghatározza a fontosságot: archiváltam az időszak összes miniszterelnökének az oldalát, az összes miniszterét, és, ahol volt külön, az összes minisztériumét, magának a kormánynak az oldalát, valamint a kormányszóvivőkét. Az államtitkárok, kormánybiztosok, miniszteri biztosok stb. nehezebb feladatot jelentettek, hiszen -- mint én is rájöttem menet közben -- róluk még csak egy komplett lista sem érhető el triviális módon. Itt is törekedtem a teljességre, de az előbbi miatt ez kevésbé bombabiztos. Könnyű volt a helyzet a pártok tekintetében, mert itt egyszerűen lehetett objektív kritériumot találni: az országgyűlési képviselettel rendelkező pártok oldalait archiváltam. Végül a nehezebb feladat a mindenkori ellenzék volt, hiszen itt nincsenek olyan jól meghatározott, hierarchikus pozíciók, mint egy kormány esetében; törekedtem a pártvezetők, frakcióvezetők oldalainak legyűjtésére.
+
+A végeredményül kialakult listát, az oldalak legfontosabb adataival az alábbi táblázat mutatja (a nyílra kattintva megjeleníthető/elrejthető a táblázat):
 
 ```{=html}
 <details>
-<summary>Archivált oldalak adatai</summary>
+<summary>Az archivált oldalak adatai</summary>
 ```
 
 ```{r authors}
@@ -65,7 +67,7 @@ knitr::kable(
           nImage = fmt_count(sum(nImage, na.rm = TRUE)), sizeImageMB = round(sum(sizeImage, na.rm = TRUE)/1024, 1),
           nVideo = fmt_count(sum(nVideo, na.rm = TRUE)), sizeVideoGB = round(sum(sizeVideo, na.rm = TRUE)/1024/1024, 1),
           nLink = fmt_count(sum(nLink, na.rm = TRUE))),
-      .(authorName)][order(authorName)],
+      .(authorName)][stringi::stri_order(authorName, locale = "hu_HU")],
   col.names = c("Szerző", "Első poszt dátuma", "Utolsó poszt dátuma", "Posztok száma", "Képek száma", "Képek mérete [MB]",
     "Videók száma", "Videók mérete [GB]", "Linkek száma"),
   align = "lllrrrrrr"
@@ -76,15 +78,19 @@ knitr::kable(
 </details>
 ```
 
+Ami a gyűjtés sikerességét illeti, egyetlen gikszer fordult elő: elsőként 5000 posztra limitálva indítottam el a gyűjtést (azt gondolván, hogy ez bőven elég -- sajnos eléggé alulbecsültem, hogy egyes politikusok mennyit posztolnak...), amit ugyan később kijavítottam, és letöltöttem az emiatt a korlát miatt lemaradt posztokat is, de két esetben -- Kovács Zoltán és Ovádi Péter -- addigra már törölték az eredeti oldalt, így ez sajnos utólag bepótolhatatlanná vált.
+
+Összességében az archívum `r fmt_count(nrow(posts))` posztot tartalmaz `r fmt_count(uniqueN(posts$authorName))` szerzőtől; az első archivált poszt dátuma `r fmt_date_long(min(posts$time))`, az utolsóé `r fmt_date_long(max(posts$time))`. A posztokban összesen `r fmt_count(nrow(images))` kép (együttes méretük: `r round(sum(posts$sizeImage, na.rm = TRUE)/1024/1024)` GB), `r fmt_count(nrow(videos))` videó (együttes méretük: `r round(sum(posts$sizeVideo, na.rm = TRUE)/1024/1024)` GB) és `r fmt_count(nrow(links))` link található.
+
 ## Mit tegyek, ha szeretnék én is hozzájárulni ezen adatok biztonságos megőrzéséhez az utókor számára?
 
 A válasz nagyon egyszerű: töltsd le az SQLite formátumú adatbázist! [Ezen a linken](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) megteheted; a mérete jelenleg kb. `r round(jsonlite::read_json("./archive-parts/latest.json")$size/1024/1024)` MB. Ez az adatbázis tartalmazza az összes szöveges adatot (ezen túl pedig a hivatkozásokat a képekre, amik maguk nem részei az adatbázisnak, méretük miatt). Ezen felül, ha használsz Github-ot, érdemes lehet fork-olni ezt a repozitóriumot is (vagy [letölteni ZIP-ben](https://github.com/ferenci-tamas/fb-politika-archivum/archive/refs/heads/main.zip)).
 
-Hogy miért jó mindez? A digitális archiválás -- de igazából minden típusú archiválás -- egyik alapmegállapítása, hogy egy anyag annál biztonságosabban van megőrizve, minél több, egymástól független (más helyen, más által őrzött) példányban van meg. (Egy amerikai projekt a nevét is erről kapta: LOCKSS -- "lots of copies keep stuff safe", nagyjából: sok másolattal biztonságban vannak a dolgok). Ezért jó, ha az adatbázis minél több helyen, minél több embernél megvan. (Ilyenkor a hitelesség kérdése fontossá válik, erre mindjárt kitérek.)
+Hogy miért jó mindez? A digitális archiválás -- de igazából minden típusú archiválás -- egyik alapmegállapítása, hogy egy anyag annál biztonságosabban van megőrizve, minél több, egymástól független (más helyen, más által őrzött) példányban van meg. (Egy amerikai projekt a nevét is erről kapta: LOCKSS -- "lots of copies keep stuff safe", nagyjából: sok másolattal biztonságban vannak a dolgok.) Ezért jó, ha az adatbázis minél több helyen, minél több embernél megvan. (Ilyenkor a hitelesség kérdése fontossá válik, erre mindjárt kitérek.)
 
 ## Technikai részletek
 
-A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy [SQLite](https://en.wikipedia.org/wiki/SQLite) formátumú adatbázist készítettem (az ehhez használt [szkriptből](SQLite-converter.R) a tábla formátuma is látható). Az SQLite azért célszerű választás, mert jól standardizált, széleskörben használt formátum, ami [kifejezetten ajánlott](https://sqlite.org/locrsf.html) adatbázisok hosszútávú megőrzéséhez. (Ez azért fontos, nehogy a jövőben az legyen a probléma, hogy hiába is van meg az adat, a formátuma nem ismert.)
+A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom, mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy [SQLite](https://en.wikipedia.org/wiki/SQLite) formátumú adatbázist készítettem (az ehhez használt [szkriptből](SQLite-converter.R) a tábla formátuma is látható). Az SQLite azért célszerű választás, mert jól standardizált, széles körben használt formátum, ami [kifejezetten ajánlott](https://sqlite.org/locrsf.html) adatbázisok hosszú távú megőrzéséhez. (Ez azért fontos, nehogy a jövőben az legyen a probléma, hogy hiába is van meg az adat, a formátuma nem ismert.)
 
 Az adatbázist és a képeket [Cloudflare R2](https://www.cloudflare.com/products/r2/)-n tároltam.
 
@@ -94,7 +100,7 @@ A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, 
 
 Digitális archívumoknál fontos kérdés a hitelesség is, tehát annak garantálása, hogy a tartalma valóban megfelel az archivált oldalak archiváláskori állapotának, azt nem módosították utólag. E cél elérése érdekében közzéteszem az `archive.sqlite` fájl [SHA-3 lenyomatát](https://en.wikipedia.org/wiki/SHA-3), ami lehetővé teszi ezt a hitelesítést: ha valaki egy olyan fájllal találkozik, ami azt állítja magáról, hogy ez az archívum, akkor nincs más dolga, mint kiszámolni a lenyomatát, és összevetni a lenti értékkel. (Az ilyen lenyomatoknak ugyanis megvan az a tulajdonságuk, hogy ha módosítják a fájlt, akkor praktikusan nulla annak a valószínűsége, hogy a lenyomat nem változik, és szintén lényegében lehetetlen célirányosan keresni olyan hamisított fájlt, aminek pont egy adott érték lenne a lenyomata.)
 
-Az `archive.sqlite` utolsó változatának időbélyege `r jsonlite::read_json("./archive-parts/latest.json")$builtAt`, mérete `r jsonlite::read_json("./archive-parts/latest.json")$size`, SHA-3 lenyomata `r as.character(openssl::sha3(file("archive.sqlite")))`.
+Az `archive.sqlite` utolsó változatának időbélyege `r jsonlite::read_json("./archive-parts/latest.json")$builtAt`, mérete `r jsonlite::read_json("./archive-parts/latest.json")$size`, SHA3-256 lenyomata `r as.character(openssl::sha3(file("archive.sqlite"), size = 256))`.
 
 (Szigorúan véve ez csak azt akadályozza meg, hogy *más* meghamisítsa az archívumot, azt nem, hogy *én* megtegyem ezt (hiszen én tudnék hamisított lenyomatot gyártani a hamisított archívumhoz). Ez ellen az jelent védelmet, hogy az `archive.sqlite` tartalmazza minden poszt egyedi azonosítóját, tehát ha ilyen vita támadna, akkor azt ugyan a vitatkozó felek maguk nem tudnák eldönteni, de a Meta -- hacsak nem feltételezzük, hogy összeesküdött valamelyik féllel -- igen, hiszen nála is megvannak a posztok és az azonosítóik, így eldönthető, hogy adott azonosító létezik-e, illetve mi van a hozzá tartozó posztban.)
 

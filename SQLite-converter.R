@@ -1196,13 +1196,11 @@ if (SPLIT_FOR_CDN) local({
 ###############################################################################
 # 16. README
 #
-# README.md is generated from README.Rmd, whose statistics (counts, time range,
-# posts per author) are read from OUTPUT_FILE, so they describe exactly this
-# build. It is rendered in a fresh R session, just as when README.Rmd is knitted
-# on its own (e.g. after editing its text), so it cannot come to depend on the
-# objects of this script. Needs pandoc: Positron and RStudio provide it; outside
-# them, put it on the PATH or point RSTUDIO_PANDOC to it. Commit the new
-# README.md once the build is uploaded.
+# README.md is generated from README.Rmd. It is rendered in a fresh R session,
+# just as when README.Rmd is knitted on its own (e.g. after editing its text),
+# so it cannot come to depend on the objects of this script. Needs pandoc: Positron
+# and RStudio provide it; outside them, put it on the PATH or point RSTUDIO_PANDOC
+# to it. Commit the new README.md once the build is uploaded.
 ###############################################################################
 
 RENDER_README <- TRUE

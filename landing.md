@@ -1,6 +1,6 @@
 Egy hobbiprojekt keretében letöltöttem valamennyi jelentős magyar politikus és politikai párt hivatalos Facebook-oldalára kirakott összes posztot a kezdetektől 2026 áprilisig.
 
-Hogy pontos legyek, több mint száz politikus és párt összesen több mint hétszázezer (!) Facebook-posztját töltöttem le. A szövegen túl letöltöttem az összes becsatolt képet és videót is; a dolog volumenére jellemző, hogy ezek együttes mérete nagyjából 2 TB.
+Hogy pontos legyek, több mint száz politikus és párt összesen több mint hétszázezer (!) Facebook-posztját töltöttem le. A szövegen túl letöltöttem az összes becsatolt képet és videót is; a dolog volumenére jellemző, hogy ezek együttes mérete nagyjából 1,5 TB.
 
 Hogy miért tettem ezt?
 
