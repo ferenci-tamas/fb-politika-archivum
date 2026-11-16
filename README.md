@@ -16,7 +16,7 @@ A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a webold
 
 ## Az archívum tartalma
 
-Az archívum 721 256 posztot tartalmaz 119 szerzőtől; az első archivált poszt dátuma 2008. április 29., az utolsóé 2026. április 18. (a cél a kezdetektől 2026 április közepéig történő archiválás volt). A posztokban összesen 645 644 kép (együttes méretük: 28 GB), 102 757 videó (együttes méretük: 1383 GB) és 212 372 link található.
+Az archívum 721 256 posztot tartalmaz 119 szerzőtől; az első archivált poszt dátuma 2008. április 29., az utolsóé 2026. április 18. (a cél a kezdetektől 2026. április közepéig történő archiválás volt). A posztokban összesen 645 644 kép (együttes méretük: 28 GB), 102 757 videó (együttes méretük: 1383 GB) és 212 372 link található.
 
 A következő táblázat mutatja az archivált oldalak legfontosabb adatait (a nyílra kattintva megjeleníthető/elrejthető a táblázat).
 
@@ -159,25 +159,15 @@ A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://
 
 Az adatbázist és a képeket [Cloudflare R2](https://www.cloudflare.com/products/r2/)-n tároltam.
 
-A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 segítségével végeztem (a transzparencia érdekében a használt [promptot](prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](DOCUMENTATION.md) fájlban érhető el.
+A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 és 5.5 segítségével végeztem (a transzparencia érdekében a használt [promptot](prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](DOCUMENTATION.md) fájlban érhető el.
 
 ## Az archívum hitelesítése
 
-Digitális archívumoknál fontos kérdés a hitelesség is, tehát annak garantálása, hogy a tartalma valóban megfelel az archivált oldalak archiváláskori állapotának, azt nem módosították utólag. E cél elérése érdekében közzéteszem az `archive.sqlite` összes publikált változatának [MD5 lenyomatát](https://en.wikipedia.org/wiki/MD5), ami lehetővé teszi ezt a hitelesítést: ha valaki egy olyan fájllal találkozik, ami azt állítja magáról, hogy ez az archívum, akkor nincs más dolga, mint kiszámolni a lenyomatát, és összevetni a lenti táblázatban szereplő értékkel. (Az ilyen lenyomatoknak ugyanis megvan az a tulajdonságuk, hogy ha módosítják a fájlt, akkor praktikusan nulla annak a valószínűsége, hogy a lenyomat nem változik, és szintén lényegében lehetetlen célirányosan keresni olyan hamisított fájlt, aminek pont egy adott érték lenne a lenyomata.)
+Digitális archívumoknál fontos kérdés a hitelesség is, tehát annak garantálása, hogy a tartalma valóban megfelel az archivált oldalak archiváláskori állapotának, azt nem módosították utólag. E cél elérése érdekében közzéteszem az `archive.sqlite` fájl [SHA-3 lenyomatát](https://en.wikipedia.org/wiki/SHA-3), ami lehetővé teszi ezt a hitelesítést: ha valaki egy olyan fájllal találkozik, ami azt állítja magáról, hogy ez az archívum, akkor nincs más dolga, mint kiszámolni a lenyomatát, és összevetni a lenti értékkel. (Az ilyen lenyomatoknak ugyanis megvan az a tulajdonságuk, hogy ha módosítják a fájlt, akkor praktikusan nulla annak a valószínűsége, hogy a lenyomat nem változik, és szintén lényegében lehetetlen célirányosan keresni olyan hamisított fájlt, aminek pont egy adott érték lenne a lenyomata.)
 
-| Időbélyeg  |   Méret   |           MD5 lenyomat           |
-|:----------:|:---------:|:--------------------------------:|
-| 1790842817 | 758960128 | eb1884b4890c545ecb7062adb83d2c79 |
-| 1790843311 | 758960128 | abaae760497c144a22414654efe071fa |
-| 1790875619 | 719568896 | d05974866a07fa6153974105cb9adf20 |
-| 1790928489 | 832913408 | f58161592c8d2d0d06e42895284a817a |
-| 1790933403 | 832913408 | ce5068d2b349e7f15e7590450aa8c9d7 |
-| 1790964387 | 832913408 | 08b24bf12f5da3360cbd3516d54197c1 |
-| 1793134806 | 842956800 | 5f74082fe2e315ee7c4b4b3a7e54d0d4 |
-| 1793143343 | 838008832 | 7e3b609580898d0606e50eb291a15731 |
-| 1793150139 | 837730304 | 036f1bdf71347dc774465318da9ddc90 |
+Az `archive.sqlite` utolsó változatának időbélyege 1793150139, mérete 837730304, SHA-3 lenyomata b84f3e7f7e707fe25f4988e8e4dbe16a522189c36915cd97c4741c6d72874428.
 
-(Szigorúan véve ez csak azt akadályozza meg, hogy *más* meghamisítsa az archívumot, azt nem, hogy *én* megtegyem ezt (hiszen én tudnék hamisított MD5 lenyomatot gyártani a hamisított archívumhoz). Ez ellen az jelent védelmet, hogy az `archive.sqlite` tartalmazza minden poszt egyedi azonosítóját, tehát ha ilyen vita támadna, akkor azt ugyan a vitatkozó felek maguk nem tudnák eldönteni, de a Meta – hacsak nem feltételezzük, hogy összeesküdött valamelyik féllel – igen, hiszen náluk is megvannak a posztok és az azonosítók, így eldönthető, hogy adott azonosító létezik-e, illetve mi van a hozzá tartozó posztban.)
+(Szigorúan véve ez csak azt akadályozza meg, hogy *más* meghamisítsa az archívumot, azt nem, hogy *én* megtegyem ezt (hiszen én tudnék hamisított lenyomatot gyártani a hamisított archívumhoz). Ez ellen az jelent védelmet, hogy az `archive.sqlite` tartalmazza minden poszt egyedi azonosítóját, tehát ha ilyen vita támadna, akkor azt ugyan a vitatkozó felek maguk nem tudnák eldönteni, de a Meta – hacsak nem feltételezzük, hogy összeesküdött valamelyik féllel – igen, hiszen nála is megvannak a posztok és az azonosítóik, így eldönthető, hogy adott azonosító létezik-e, illetve mi van a hozzá tartozó posztban.)
 
 ## Ismert problémák
 
