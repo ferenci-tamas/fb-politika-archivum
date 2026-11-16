@@ -27,16 +27,9 @@ posts <- merge(posts, images[, .(nImage = .N, sizeImage = sum(size, na.rm = TRUE
 posts <- merge(posts, videos[, .(nVideo = .N, sizeVideo = sum(size, na.rm = TRUE)), .(postId)], by = "postId", all.x = TRUE, sort = FALSE)
 posts <- merge(posts, links[, .(nLink = .N), .(postId)], by = "postId", all.x = TRUE, sort = FALSE)
 
-# Formatted as on the website (src/lib/format.js): Hungarian local time, digits
-# grouped with non-breaking spaces.
-months_hu <- c("január", "február", "március", "április", "május", "június",
-  "július", "augusztus", "szeptember", "október", "november", "december")
 local_time <- function(x) as.POSIXlt(as.POSIXct(x, tz = "UTC"), tz = "Europe/Budapest")
 fmt_date <- function(x) format(local_time(x), "%Y. %m. %d.")
-fmt_date_long <- function(x) {
-  t <- local_time(x)
-  sprintf("%d. %s %d.", t$year + 1900L, months_hu[t$mon + 1L], t$mday)
-}
+fmt_date_long <- function(x) format(local_time(x), "%Y. %B %d.")
 fmt_count <- function(x) formatC(x, format = "d", big.mark = "\u00a0")
 ```
 
