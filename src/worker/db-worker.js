@@ -3,10 +3,13 @@
 // UI thread is never blocked. The worker exposes a tiny message protocol:
 //
 //   main -> worker : { type:'query', reqId, view, nav, wantCount }
-//   worker -> main : { type:'ready', meta, authors }
+//                    { type:'transcript', reqId, id }
+//   worker -> main : { type:'ready', meta, authors, transcriptsAvailable, ... }
 //                    { type:'init-error', message, kind }
 //                    { type:'result', reqId, rows, pagination, count?, fetchedBytes }
 //                    { type:'error', reqId, message, kind? }
+//                    { type:'transcript-result', reqId, id, transcript, fetchedBytes }
+//                    { type:'transcript-error', reqId, id, message, kind? }
 
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 
@@ -14,6 +17,7 @@ import {
   MANIFEST_URL,
   DATABASE_BASE_URL,
   FTS_TABLE,
+  SEARCH_IN,
   SORTS,
   FEED_PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
@@ -21,7 +25,7 @@ import {
 } from '../config.js';
 import { PartMap } from '../lib/parts.js';
 import { installRangeVfs } from '../lib/http-vfs.js';
-import { buildFtsMatch } from '../lib/fts-query.js';
+import { buildFtsMatch, scopeFtsMatch } from '../lib/fts-query.js';
 import { parseImages, parseLinks } from '../lib/sanitize.js';
 import * as Q from '../lib/queries.js';
 import { bucketByMonth, monthTotals } from '../lib/monthly.js';
@@ -51,12 +55,20 @@ let manifestMonthBounds = null;
 // Unlike the boundaries these have no scan fallback, so the link-availability view is
 // only available when the manifest carries them.
 let linkMonthly = null;
+// Per-month count of posts with a video transcript (MANIFEST_FORMAT >= 4), ym -> n:
+// the ratio denominator of a narratives search in the transcripts alone. No scan
+// fallback either; without it such a ratio is taken against all posts.
+let transcriptMonthly = null;
 // Whether the archive has the word_monthly table (schema_version >= 3), for the
 // "Leggyakoribb szavak" view. Older archives lack it; the view then shows a notice.
 let wordsAvailable = false;
 // Whether word_month_totals (the relative-frequency denominators) is present. The
 // ratio toggle in the words view is only offered when it is.
 let wordsRatioAvailable = false;
+// Whether the archive has video transcripts (schema_version >= 4): the transcripts
+// table, posts.video, and the transcript column of the full-text indexes. Without
+// them the search covers the post text only and no "Leirat" link is shown.
+let transcriptsAvailable = false;
 
 const VALID_SORTS = new Set([SORTS.DATE_DESC, SORTS.DATE_ASC, SORTS.AUTHOR]);
 
@@ -64,8 +76,16 @@ function clampPageSize(n) {
   return FEED_PAGE_SIZES.includes(n) ? n : DEFAULT_PAGE_SIZE;
 }
 
+// The MATCH expression for a search, restricted to the chosen part of the posts
+// ("Keresés ebben"). Archives without transcripts index the post text alone, so
+// there is nothing to restrict (and a column filter would be an error there).
+function scopedMatch(search, searchIn) {
+  const match = search ? buildFtsMatch(search) : '';
+  return transcriptsAvailable ? scopeFtsMatch(match, searchIn) : match;
+}
+
 function resolveView(raw) {
-  const match = raw.search ? buildFtsMatch(raw.search) : '';
+  const match = scopedMatch(raw.search, raw.searchIn);
   const view = {
     dateFrom: Number.isFinite(raw.dateFrom) ? raw.dateFrom : null,
     dateTo: Number.isFinite(raw.dateTo) ? raw.dateTo : null,
@@ -93,7 +113,8 @@ function toDisplayRow(r) {
     time: r.time,
     text: r.text,
     images: parseImages(r.images),
-    links: parseLinks(r.links)
+    links: parseLinks(r.links),
+    video: r.video == null ? null : Number(r.video)
   };
 }
 
@@ -102,7 +123,7 @@ async function init() {
     const resp = await fetch(MANIFEST_URL);
     if (!resp.ok) throw new Error(`Nem sikerült letölteni az adatbázis-leírót (HTTP ${resp.status}).`);
     const manifest = await resp.json();
-    if (manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) {
+    if (![2, 3, 4].includes(manifest.schemaVersion)) {
       throw new Error(`Nem támogatott adatbázis-sémaverzió: ${manifest.schemaVersion}.`);
     }
     // word_monthly (the "Leggyakoribb szavak" view) exists from schema_version 3.
@@ -116,6 +137,9 @@ async function init() {
           links: Number(m.links) || 0,
           unavail: Number(m.unavail) || 0
         }));
+      }
+      if (manifest.monthBounds.some((m) => m && m.transcripts != null)) {
+        transcriptMonthly = new Map(manifest.monthBounds.map((m) => [m.ym, Number(m.transcripts) || 0]));
       }
     }
 
@@ -161,9 +185,23 @@ async function init() {
     wordsRatioAvailable = wordsAvailable && Number(
       db.selectValue("SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='word_month_totals'")
     ) > 0;
+    // Transcripts arrive with schema_version 4, together with posts.video and the
+    // transcript column of the full-text indexes.
+    transcriptsAvailable = manifest.schemaVersion >= 4 && Number(
+      db.selectValue("SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='transcripts'")
+    ) > 0;
     ready = true;
 
-    self.postMessage({ type: 'ready', meta, authors, wordsAvailable, wordsRatioAvailable });
+    self.postMessage({
+      type: 'ready',
+      meta,
+      authors,
+      wordsAvailable,
+      wordsRatioAvailable,
+      transcriptsAvailable,
+      // A transcript-only narratives ratio can be taken against the posts with a transcript.
+      videoTotalsAvailable: transcriptsAvailable && transcriptMonthly != null
+    });
   } catch (err) {
     self.postMessage({
       type: 'init-error',
@@ -182,6 +220,7 @@ self.onmessage = (event) => {
   if (msg.type === 'activity') return void handleActivity(msg);
   if (msg.type === 'link-availability') return void handleLinkAvailability(msg);
   if (msg.type === 'top-words') return void handleTopWords(msg);
+  if (msg.type === 'transcript') return void handleTranscript(msg);
 };
 
 async function handleQuery(msg) {
@@ -222,7 +261,7 @@ async function handleQuery(msg) {
       }
     }
 
-    const rows = Q.hydrateIds(db, page.ids);
+    const rows = Q.hydrateIds(db, page.ids, { video: transcriptsAvailable });
     const payload = {
       type: 'result',
       reqId: msg.reqId,
@@ -242,6 +281,42 @@ async function handleQuery(msg) {
     self.postMessage({
       type: 'error',
       reqId: msg.reqId,
+      kind: (vfsErr && vfsErr.kind) || (err && err.kind),
+      message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
+    });
+  }
+}
+
+// The transcript of one post's video, read when its "Leirat" dialog opens (the
+// results only carry the posts.video flag). `transcript` is null when the post has
+// none, or the archive predates transcripts (schema_version < 4).
+function handleTranscript(msg) {
+  const id = Number(msg.id);
+  if (!ready) {
+    self.postMessage({ type: 'transcript-error', reqId: msg.reqId, id, message: 'Az adatbázis még nem áll készen.' });
+    return;
+  }
+  if (!transcriptsAvailable || !Number.isInteger(id)) {
+    self.postMessage({ type: 'transcript-result', reqId: msg.reqId, id, transcript: null, fetchedBytes: 0 });
+    return;
+  }
+  try {
+    vfs.clearLastError();
+    const beforeBytes = vfs.getStats().bytesFetched;
+    const transcript = Q.readTranscript(db, id);
+    self.postMessage({
+      type: 'transcript-result',
+      reqId: msg.reqId,
+      id,
+      transcript,
+      fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
+    });
+  } catch (err) {
+    const vfsErr = vfs && vfs.getLastError();
+    self.postMessage({
+      type: 'transcript-error',
+      reqId: msg.reqId,
+      id,
       kind: (vfsErr && vfsErr.kind) || (err && err.kind),
       message: (vfsErr && vfsErr.message) || (err && err.message) || String(err)
     });
@@ -382,7 +457,11 @@ function handleTopWords(msg) {
 
 // Monthly post-count histogram for a search: bucket the matching FTS rowids into
 // months via the cached boundaries (see src/lib/monthly.js). Only the FTS index
-// (and, once per session, the time index) is read — never the posts rows.
+// (and, once per session, the time index) is read — never the posts rows. The
+// search covers msg.searchIn ("Keresés ebben"; the post text by default). Each point
+// carries its ratio denominator: the month's posts, or for a search in the
+// transcripts alone, the month's posts with a transcript (when the manifest has
+// them); `denominator` says which.
 function handleMonthly(msg) {
   if (!ready) {
     self.postMessage({ type: 'monthly-error', reqId: msg.reqId, message: 'Az adatbázis még nem áll készen.' });
@@ -392,16 +471,20 @@ function handleMonthly(msg) {
     vfs.clearLastError();
     const beforeBytes = vfs.getStats().bytesFetched;
     ensureMonthBounds();
-    // Per-month totals come free from the boundaries (ids are contiguous in time
+    const searchIn = Object.values(SEARCH_IN).includes(msg.searchIn) ? msg.searchIn : SEARCH_IN.TEXT;
+    const perTranscript = searchIn === SEARCH_IN.VIDEO && transcriptsAvailable && transcriptMonthly != null;
+    // Per-month post totals come free from the boundaries (ids are contiguous in time
     // order), so the ratio view needs no extra query — see src/lib/monthly.js.
-    const totals = monthTotals(monthBounds, meta.max_id);
+    const totals = perTranscript
+      ? monthBounds.map((m) => transcriptMonthly.get(m.ym) || 0)
+      : monthTotals(monthBounds, meta.max_id);
     const ftsTable = msg.accentSensitive ? FTS_TABLE.sensitive : FTS_TABLE.folded;
     const searches = Array.isArray(msg.searches) ? msg.searches : [];
 
     // One series per phrase. Boundaries + totals are computed once above; each
     // phrase is then just a compact FTS doclist scan plus in-memory bucketing.
     const series = searches.map(({ id, phrase }) => {
-      const match = phrase ? buildFtsMatch(phrase) : '';
+      const match = scopedMatch(phrase, searchIn);
       if (match === '') {
         return { id, phrase, matchEmpty: true, matchCount: 0, points: [] };
       }
@@ -414,6 +497,7 @@ function handleMonthly(msg) {
       type: 'monthly-result',
       reqId: msg.reqId,
       series,
+      denominator: perTranscript ? 'transcripts' : 'posts',
       fetchedBytes: vfs.getStats().bytesFetched - beforeBytes
     });
   } catch (err) {

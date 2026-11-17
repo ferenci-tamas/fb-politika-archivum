@@ -6,7 +6,7 @@ import { el, externalAnchor, clear } from './dom.js';
 import { formatHuDateTime } from '../lib/format.js';
 import { imageUrl } from '../lib/sanitize.js';
 
-const TABLE_COLUMNS = 6;
+const TABLE_COLUMNS = 7;
 
 export function renderRows(tbody, rows, { imagesBaseUrl }) {
   clear(tbody);
@@ -85,7 +85,8 @@ function buildRow(row, imagesBaseUrl) {
       className: 'post-link'
     })),
     buildLinksCell(row.links),
-    buildImagesCell(row.images, imagesBaseUrl)
+    buildImagesCell(row.images, imagesBaseUrl),
+    buildVideoCell(row)
   );
 }
 
@@ -128,6 +129,24 @@ function buildLinksCell(links) {
       )
     );
   });
+  return td;
+}
+
+// A post has at most one video with a transcript (SQLite-converter.R checks it), so
+// a single, unnumbered link. It opens the transcript dialog (main.js, by data-id);
+// the text itself is only fetched then.
+function buildVideoCell(row) {
+  const td = el('td', { class: 'col-video' });
+  if (row.video !== 1) return td;
+  td.append(
+    el('button', {
+      type: 'button',
+      class: 'transcript-link',
+      'aria-haspopup': 'dialog',
+      title: 'A videó leiratának megnyitása',
+      dataset: { id: String(row.id) }
+    }, 'Leirat')
+  );
   return td;
 }
 

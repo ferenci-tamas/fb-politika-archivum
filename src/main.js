@@ -7,12 +7,14 @@ import {
   IMAGES_BASE_URL,
   FEED_PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
-  SORTS
+  SORTS,
+  SEARCH_IN
 } from './config.js';
 import { formatCount, dateInputToUnixStart, dateInputToUnixEndExclusive, unixToDateInput } from './lib/format.js';
 import { renderRows, renderMessageRow, refreshExpandControls } from './ui/render.js';
 import { createAuthorCombobox } from './ui/author-combobox.js';
 import { initImagePreview } from './ui/image-preview.js';
+import { createTranscriptDialog } from './ui/transcript-dialog.js';
 import { renderLineChart, preloadChart, WORD_RATIO_MIN_TOKENS, updateStackedSeries, assignStableColors } from './ui/line-chart.js';
 import { shapeTopWords } from './lib/top-words.js';
 import { el } from './ui/dom.js';
@@ -45,6 +47,10 @@ const els = {
   analysisAdd: $('analysis-add'),
   analysisAccent: $('analysis-accent'),
   analysisRatio: $('analysis-ratio'),
+  analysisRatioLabel: $('analysis-ratio-label'),
+  analysisSearchIn: $('analysis-search-in'),
+  analysisSearchInText: $('analysis-search-in-text'),
+  analysisSearchInVideo: $('analysis-search-in-video'),
   analysisStatus: $('analysis-status'),
   analysisChart: $('analysis-chart'),
   elemzesMenu: $('elemzes-menu'),
@@ -68,6 +74,9 @@ const els = {
   wordsChart: $('words-chart'),
   search: $('search'),
   searchClear: $('search-clear'),
+  searchIn: $('search-in'),
+  searchInText: $('search-in-text'),
+  searchInVideo: $('search-in-video'),
   accent: $('accent'),
   authorCombobox: $('author-combobox'),
   authorInput: $('author-input'),
@@ -97,7 +106,11 @@ const els = {
   navNext: $('nav-next'),
   navLast: $('nav-last'),
   pageInfo: $('page-info'),
-  fetchStat: $('fetch-stat')
+  fetchStat: $('fetch-stat'),
+  transcriptDialog: $('transcript-dialog'),
+  transcriptMeta: $('transcript-meta'),
+  transcriptBody: $('transcript-body'),
+  transcriptDownload: $('transcript-download')
 };
 
 const TABS = ['nyitolap', 'adatbazis', 'elemzes'];
@@ -111,6 +124,7 @@ const state = {
   // filters / view
   search: '',
   accentSensitive: false,
+  searchIn: SEARCH_IN.ALL,
   authorIds: [],
   dateFrom: null,
   dateTo: null,
@@ -136,6 +150,16 @@ let authorPicker = null;
 let authorIdToName = new Map();
 let authorNameToId = new Map();
 const SORT_VALUES = Object.values(SORTS);
+// Video transcripts (schema_version >= 4), set from the 'ready' message. Without
+// them the "Keresés ebben" choice is hidden and the search covers the post text.
+let transcriptsAvailable = false;
+// Whether the manifest has the monthly counts of posts with a transcript, the ratio
+// denominator of a narratives search in the videos alone (MANIFEST_FORMAT >= 4).
+let videoTotalsAvailable = false;
+let transcriptReqId = 0;
+// The rows of the page on display, by id: the transcript dialog's title and file
+// name come from here.
+let currentRows = new Map();
 
 // --- database worker (created lazily when the Adatbázis tab is first opened) -
 
@@ -180,6 +204,12 @@ function initDatabase() {
       case 'top-words-error':
         if (msg.reqId === wordsReqId) onWordsError(msg);
         break;
+      case 'transcript-result':
+        if (msg.reqId === transcriptReqId) onTranscriptResult(msg);
+        break;
+      case 'transcript-error':
+        if (msg.reqId === transcriptReqId) onTranscriptError(msg);
+        break;
       default:
         break;
     }
@@ -193,6 +223,7 @@ function buildViewParams() {
   return {
     search: state.search,
     accentSensitive: state.accentSensitive,
+    searchIn: state.searchIn,
     authorIds: state.authorIds,
     dateFrom: state.dateFrom,
     dateTo: state.dateTo,
@@ -240,6 +271,12 @@ function onReady(msg) {
   wordsAvailable = !!msg.wordsAvailable;
   wordsRatioAvailable = !!msg.wordsRatioAvailable;
   els.wordsRatio.disabled = !wordsRatioAvailable; // static per archive; never re-enabled
+  transcriptsAvailable = !!msg.transcriptsAvailable;
+  videoTotalsAvailable = !!msg.videoTotalsAvailable;
+  els.searchIn.hidden = !transcriptsAvailable; // static per archive
+  els.analysisSearchIn.hidden = !transcriptsAvailable;
+  if (!transcriptsAvailable) analysisSearchIn = SEARCH_IN.TEXT; // a deep link may ask for videos
+  syncAnalysisSearchIn();
   populateWordsAuthors(msg.authors);
   authorPicker = createAuthorCombobox({
     container: els.authorCombobox,
@@ -313,6 +350,7 @@ function onResult(msg) {
   }
   state.rowCount = rowCount;
 
+  currentRows = new Map(msg.rows.map((r) => [r.id, r]));
   if (rowCount === 0) {
     renderMessageRow(els.body, 'Nincs a feltételeknek megfelelő poszt.');
   } else {
@@ -466,6 +504,38 @@ function setControlsDisabled(disabled) {
   for (const key of ['search', 'accent', 'authorInput', 'dateFrom', 'dateTo', 'sort', 'pageSize', 'filtersClear', 'searchClear']) {
     els[key].disabled = disabled;
   }
+  if (disabled) {
+    els.searchInText.disabled = true;
+    els.searchInVideo.disabled = true;
+  } else {
+    syncSearchInControls();
+  }
+}
+
+// "Keresés ebben" (Adatbázis and Elemzés narratives): a pair of checkboxes <-> a
+// SEARCH_IN value. At least one must stay ticked, so the last ticked one is disabled
+// (with a hint on its label) until the other is ticked again.
+const SEARCH_IN_LAST_HINT = 'Legalább az egyiknek bejelölve kell maradnia.';
+
+function readSearchIn(textBox, videoBox) {
+  if (textBox.checked && !videoBox.checked) return SEARCH_IN.TEXT;
+  if (videoBox.checked && !textBox.checked) return SEARCH_IN.VIDEO;
+  return SEARCH_IN.ALL;
+}
+
+function syncSearchInBoxes(textBox, videoBox, searchIn) {
+  const text = searchIn !== SEARCH_IN.VIDEO;
+  const video = searchIn !== SEARCH_IN.TEXT;
+  textBox.checked = text;
+  videoBox.checked = video;
+  for (const [box, onlyOne] of [[textBox, !video], [videoBox, !text]]) {
+    box.disabled = !state.ready || onlyOne;
+    box.closest('label').title = onlyOne ? SEARCH_IN_LAST_HINT : '';
+  }
+}
+
+function syncSearchInControls() {
+  syncSearchInBoxes(els.searchInText, els.searchInVideo, state.searchIn);
 }
 
 // --- deep link (URL hash) <-> state -----------------------------------------
@@ -480,6 +550,7 @@ function updateHash() {
       {
         search: state.search,
         accentSensitive: state.accentSensitive,
+        searchIn: state.searchIn,
         authorNames: state.authorIds.map((id) => authorIdToName.get(id)).filter(Boolean),
         dateFrom: els.dateFrom.value,
         dateTo: els.dateTo.value,
@@ -500,6 +571,7 @@ function updateHash() {
       view: elemzesView,
       phrases: [...els.analysisPhrases.querySelectorAll('.analysis-phrase')].map((i) => i.value),
       accentSensitive: els.analysisAccent.checked,
+      searchIn: analysisSearchIn,
       ratio:
         elemzesView === 'activity'
           ? els.activityRatio.checked
@@ -525,6 +597,9 @@ function applyHashFiltersToState() {
   els.searchClear.hidden = v.search.trim() === '';
   els.accent.checked = v.accentSensitive;
   state.accentSensitive = v.accentSensitive;
+  // Without transcripts there is only the post text to search.
+  state.searchIn = transcriptsAvailable ? v.searchIn : SEARCH_IN.ALL;
+  syncSearchInControls();
   els.sort.value = v.sort;
   state.sort = v.sort;
   els.pageSize.value = String(v.pageSize);
@@ -544,6 +619,8 @@ function readFiltersAndReload() {
   state.dateFrom = els.dateFrom.value ? dateInputToUnixStart(els.dateFrom.value) : null;
   state.dateTo = els.dateTo.value ? dateInputToUnixEndExclusive(els.dateTo.value) : null;
   state.accentSensitive = els.accent.checked;
+  state.searchIn = readSearchIn(els.searchInText, els.searchInVideo);
+  syncSearchInControls();
   state.sort = els.sort.value;
   state.pageSize = FEED_PAGE_SIZES.includes(Number(els.pageSize.value)) ? Number(els.pageSize.value) : DEFAULT_PAGE_SIZE;
   updateDateClears();
@@ -581,6 +658,8 @@ els.searchClear.addEventListener('click', () => {
 });
 
 els.accent.addEventListener('change', readFiltersAndReload);
+els.searchInText.addEventListener('change', readFiltersAndReload);
+els.searchInVideo.addEventListener('change', readFiltersAndReload);
 els.dateFrom.addEventListener('change', readFiltersAndReload);
 els.dateTo.addEventListener('change', readFiltersAndReload);
 
@@ -617,6 +696,8 @@ els.filtersClear.addEventListener('click', () => {
   els.search.value = '';
   els.searchClear.hidden = true;
   els.accent.checked = false;
+  els.searchInText.checked = true;
+  els.searchInVideo.checked = true;
   if (authorPicker) authorPicker.reset();
   state.authorIds = [];
   els.dateFrom.value = '';
@@ -649,7 +730,9 @@ let analysisTimer = null;
 let nextPhraseId = 0;
 // At most this many phrases/series — matches the chart colour palette (line-chart.js).
 const MAX_PHRASES = 8;
-let lastMonthly = null; // most recent { series }; re-rendered on ratio toggle, no re-query
+let lastMonthly = null; // most recent { series, perTranscript }; re-rendered on ratio toggle, no re-query
+// Narratives "Keresés ebben" (SEARCH_IN): the post text by default, unlike Adatbázis.
+let analysisSearchIn = SEARCH_IN.TEXT;
 // Elemzés sub-view (dropdown): 'activity' (all posts), 'narratives' (phrase search),
 // or 'links' (link-availability over time).
 let elemzesView = 'narratives';
@@ -757,7 +840,8 @@ function runAnalysis() {
     type: 'monthly',
     reqId: analysisReqId,
     searches,
-    accentSensitive: els.analysisAccent.checked
+    accentSensitive: els.analysisAccent.checked,
+    searchIn: analysisSearchIn
   });
 }
 
@@ -769,7 +853,7 @@ function onMonthlyResult(msg) {
     els.analysisChart.replaceChildren();
     return;
   }
-  lastMonthly = { series };
+  lastMonthly = { series, perTranscript: msg.denominator === 'transcripts' };
   const totalMatches = series.reduce((sum, s) => sum + s.matchCount, 0);
   els.analysisStatus.textContent =
     series.length === 1
@@ -785,10 +869,31 @@ function drawAnalysisChart() {
   const ratio = els.analysisRatio.checked;
   const series = lastMonthly.series.map((s) => ({ label: s.phrase, points: s.points }));
   const phrases = series.map((s) => s.label).join(', ');
+  // A transcript-only ratio is taken against the posts with a transcript (worker).
+  const perTranscript = ratio && lastMonthly.perTranscript;
   renderLineChart(els.analysisChart, series, {
     mode: ratio ? 'ratio' : 'count',
-    ariaLabel: `Havi ${ratio ? 'találatarány' : 'találatszám'} keresőkifejezésenként: ${phrases}`
+    subtitle: perTranscript ? '(arány a leirattal rendelkező posztok számához viszonyítva)' : '',
+    ariaLabel: `Havi ${ratio ? 'találatarány' : 'találatszám'}${perTranscript ? ' a leirattal rendelkező posztok körében' : ''} keresőkifejezésenként: ${phrases}`
   });
+}
+
+// "Keresés ebben" of the narratives: the post text by default (comparable over
+// time, as the share of posts with a video grew steeply). While only the videos are
+// searched, the ratio is taken against the posts with a transcript, when the
+// archive's manifest has their monthly counts; the checkbox label says so.
+function syncAnalysisSearchIn() {
+  syncSearchInBoxes(els.analysisSearchInText, els.analysisSearchInVideo, analysisSearchIn);
+  els.analysisRatioLabel.textContent =
+    analysisSearchIn === SEARCH_IN.VIDEO && videoTotalsAvailable
+      ? 'A leirattal rendelkező posztok számához viszonyítva'
+      : 'Az összes poszt számához viszonyítva';
+}
+
+function readAnalysisSearchIn() {
+  analysisSearchIn = readSearchIn(els.analysisSearchInText, els.analysisSearchInVideo);
+  syncAnalysisSearchIn();
+  runAnalysis();
 }
 
 function onMonthlyError(msg) {
@@ -834,6 +939,8 @@ els.analysisAdd.addEventListener('click', () => {
   if (input) input.focus();
 });
 els.analysisAccent.addEventListener('change', runAnalysis);
+els.analysisSearchInText.addEventListener('change', readAnalysisSearchIn);
+els.analysisSearchInVideo.addEventListener('change', readAnalysisSearchIn);
 els.analysisRatio.addEventListener('change', () => {
   drawAnalysisChart();
   updateHash();
@@ -1182,9 +1289,13 @@ function applyHashAnalysisToState() {
   const onElemzes = new URLSearchParams(location.hash.replace(/^#/, '')).get('tab') === 'elemzes';
   const a = onElemzes
     ? decodeHashToAnalysis(location.hash)
-    : { view: 'narratives', phrases: [], accentSensitive: false, ratio: true };
+    : { view: 'narratives', phrases: [], accentSensitive: false, searchIn: SEARCH_IN.TEXT, ratio: true };
   elemzesView = a.view === 'activity' ? 'activity' : a.view === 'links' ? 'links' : a.view === 'words' ? 'words' : 'narratives';
   els.analysisAccent.checked = a.accentSensitive;
+  // Before the DB is ready the decoded scope is kept as is; onReady resets it to the
+  // post text when the archive has no transcripts.
+  analysisSearchIn = a.view === 'narratives' && (transcriptsAvailable || !state.ready) ? a.searchIn : SEARCH_IN.TEXT;
+  syncAnalysisSearchIn();
   // Route the decoded ratio to its sub-view; the others keep their defaults. The words
   // sub-view's ratio is restored in restoreWordsAuthorFromHash (it needs the
   // availability flag, known only once the DB is ready).
@@ -1223,6 +1334,41 @@ els.body.addEventListener('click', (e) => {
   btn.textContent = nowExpanded ? 'Kevesebb' : 'Megnyitás';
 });
 
+// --- video transcripts ("Leirat" links of the Videó column) -----------------
+// The dialog opens at once in a loading state; the worker then reads the one
+// transcript (Q.readTranscript). transcriptReqId drops a stale reply when another
+// transcript was opened meanwhile.
+const transcriptDialog = createTranscriptDialog({
+  dialog: els.transcriptDialog,
+  meta: els.transcriptMeta,
+  body: els.transcriptBody,
+  download: els.transcriptDownload
+});
+
+function openTranscript(id, trigger) {
+  const row = currentRows.get(id);
+  if (!row || !worker) return;
+  transcriptReqId += 1;
+  transcriptDialog.open(row, trigger);
+  worker.postMessage({ type: 'transcript', reqId: transcriptReqId, id });
+}
+
+function onTranscriptResult(msg) {
+  state.sessionBytes += msg.fetchedBytes || 0;
+  updateFetchStat();
+  if (msg.transcript == null) transcriptDialog.showError(msg.id, 'Ehhez a poszthoz nem található leirat.');
+  else transcriptDialog.showText(msg.id, msg.transcript);
+}
+
+function onTranscriptError(msg) {
+  transcriptDialog.showError(msg.id, formatErrorMessage(msg));
+}
+
+els.body.addEventListener('click', (e) => {
+  const btn = e.target.closest('.transcript-link');
+  if (btn) openTranscript(Number(btn.dataset.id), btn);
+});
+
 // Re-evaluate expand controls when a width change (window resize / orientation)
 // could alter which posts are clipped.
 let resizeTimer = null;
@@ -1259,13 +1405,15 @@ function setPanelExpanded(controlsEl, toggleEl, expanded, { graceAfter = true } 
 }
 
 // Count the result-narrowing filters that are active (author, date range, accent
-// sensitivity). Sort and page size are display options, not filters, so they're
-// excluded from both the badge and the auto-expand decision.
+// sensitivity, a search restricted to the post text or the videos). Sort and page
+// size are display options, not filters, so they're excluded from both the badge
+// and the auto-expand decision.
 function activeFilterCount() {
   let n = 0;
   if (state.authorIds.length > 0) n += 1;
   if (state.dateFrom != null || state.dateTo != null) n += 1;
   if (state.accentSensitive) n += 1;
+  if (state.searchIn !== SEARCH_IN.ALL) n += 1;
   return n;
 }
 
@@ -1373,6 +1521,7 @@ function setActiveTab(tab, { updateUrl = true } = {}) {
   if (!TABS.includes(tab)) tab = 'nyitolap';
   activeTab = tab;
   setElemzesMenuOpen(false); // any tab activation closes the Elemzés dropdown
+  transcriptDialog.close(); // e.g. Back/Forward to another tab while it is open
   for (const t of TABS) {
     const selected = t === tab;
     tabEls[t].tab.setAttribute('aria-selected', String(selected));

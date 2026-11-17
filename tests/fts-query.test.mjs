@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFtsMatch } from '../src/lib/fts-query.js';
+import { buildFtsMatch, scopeFtsMatch } from '../src/lib/fts-query.js';
+import { SEARCH_IN } from '../src/lib/constants.js';
 
 test('empty / whitespace / non-string input yields empty', () => {
   assert.equal(buildFtsMatch(''), '');
@@ -53,4 +54,21 @@ test('only-operator / only-punctuation input yields empty (no dangling operator)
 
 test('unbalanced opening quote is tolerated', () => {
   assert.equal(buildFtsMatch('"hello'), '"hello"');
+});
+
+test('search scope: both columns leave the expression unrestricted', () => {
+  assert.equal(scopeFtsMatch('"alma" AND "körte"', SEARCH_IN.ALL), '"alma" AND "körte"');
+  assert.equal(scopeFtsMatch('"alma"', undefined), '"alma"');
+});
+
+test('search scope: one column filters the whole parenthesized expression', () => {
+  const m = buildFtsMatch('alma -körte');
+  assert.equal(scopeFtsMatch(m, SEARCH_IN.TEXT), '{text} : (("alma") NOT ("körte"))');
+  assert.equal(scopeFtsMatch(buildFtsMatch('inflác*'), SEARCH_IN.VIDEO), '{transcript} : ("inflác"*)');
+});
+
+test('search scope: an empty expression stays empty', () => {
+  assert.equal(scopeFtsMatch('', SEARCH_IN.TEXT), '');
+  assert.equal(scopeFtsMatch(buildFtsMatch('***'), SEARCH_IN.VIDEO), '');
+  assert.equal(scopeFtsMatch(null, SEARCH_IN.VIDEO), '');
 });

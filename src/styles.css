@@ -330,6 +330,24 @@ main {
   white-space: nowrap;
 }
 
+/* "Keresés ebben": where the search looks (post text / video transcripts). */
+.search-in {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.search-in-label {
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The two options wrap together, below the label, rather than one by one. */
+.search-in-options {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
 /* Collapsible "Keresési tippek" helper next to the search box. The panel is
    anchored to the full-width .search-row (not the small summary) so it can't run
    off the right edge on narrow screens. */
@@ -679,7 +697,8 @@ button:disabled {
 }
 .col-post,
 .col-links,
-.col-images {
+.col-images,
+.col-video {
   white-space: nowrap;
 }
 
@@ -739,6 +758,18 @@ button:disabled {
 }
 .col-images .num-link {
   margin-right: 10px;
+}
+/* "Leirat" opens a dialog, so it is a button, styled like the other links. */
+.transcript-link {
+  appearance: none;
+  padding: 0 1px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+}
+.transcript-link:hover {
+  text-decoration: underline;
 }
 .dot {
   font-size: 0.72rem;
@@ -914,6 +945,98 @@ button:disabled {
   cursor: help;
 }
 
+/* Transcript dialog (see ui/transcript-dialog.js) ---------------------------- */
+/* The dialog has no padding of its own: its panel fills it, so a click that
+   lands on the dialog element itself is a click on the backdrop. */
+.transcript-dialog {
+  width: min(760px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+.transcript-dialog[open] {
+  display: flex;
+}
+.transcript-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+body:has(.transcript-dialog[open]) {
+  overflow: hidden;
+}
+.transcript-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.transcript-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 6px;
+}
+.transcript-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.transcript-meta {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.transcript-note {
+  margin: 0;
+  padding: 0 18px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+.transcript-body {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  padding: 14px 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+.transcript-body.is-status {
+  color: var(--muted);
+}
+.transcript-body.is-error {
+  color: var(--bad);
+}
+.transcript-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--border);
+}
+.dialog-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.dialog-close:hover {
+  background: var(--border);
+}
+
 /* Pager --------------------------------------------------------------------- */
 .pager {
   display: flex;
@@ -1049,6 +1172,7 @@ button:disabled {
     flex: 1 1 180px;
   }
   .controls--collapsed .accent-toggle,
+  .controls--collapsed .search-in,
   .controls--collapsed .search-tips,
   .controls--collapsed .filter-row {
     display: none;

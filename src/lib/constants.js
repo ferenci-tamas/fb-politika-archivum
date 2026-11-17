@@ -17,6 +17,21 @@ export const FTS_TABLE = {
   folded: 'posts_fts_folded' // unicode61 remove_diacritics 2 (kör == kor == kór)
 };
 
+// Columns of both FTS5 indexes from schema_version 4: the post text and the
+// transcript of the post's video. Older archives index posts.text alone.
+export const FTS_COLUMNS = {
+  text: 'text',
+  video: 'transcript'
+};
+
+// Where the Adatbázis search looks ("Keresés ebben"): the post text and the
+// video transcripts together (default), or only one of them.
+export const SEARCH_IN = {
+  ALL: 'all',
+  TEXT: 'text',
+  VIDEO: 'video'
+};
+
 // HTTP range VFS tuning ------------------------------------------------------
 // Caching/fetch granularity: 32 KiB, a multiple of the SQLite page size (2 pages
 // at the 16 KiB build, 8 at 4 KiB), so a page read never straddles a block

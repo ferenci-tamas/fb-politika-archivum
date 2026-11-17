@@ -12,6 +12,9 @@
 import { SORTS, FTS_TABLE } from './constants.js';
 
 const HYDRATE_COLUMNS = 'id, postId, authorId, url, time, text, images, links';
+// posts.video (schema_version >= 4): NULL no video, 0 a video without transcript,
+// 1 a video with transcript. Older archives have no such column.
+const HYDRATE_COLUMNS_VIDEO = `${HYDRATE_COLUMNS}, video`;
 
 /** Read archive_meta into a plain object with numeric values. */
 export function readMeta(db) {
@@ -231,11 +234,13 @@ function runScan(db, view, scanDir, boundary, limit) {
 // --- hydration --------------------------------------------------------------
 // One query fetches whole rows for the page's ids, including the embedded
 // images/links JSON, so a 1:N page needs no join and no extra page fetches.
+// With { video: true } (schema_version >= 4) each row also carries posts.video,
+// which says whether a transcript exists without reading the transcripts table.
 
-export function hydrateIds(db, ids) {
+export function hydrateIds(db, ids, { video = false } = {}) {
   if (ids.length === 0) return [];
   const rows = db.selectObjects(
-    `SELECT ${HYDRATE_COLUMNS} FROM posts WHERE id IN (SELECT value FROM json_each(?))`,
+    `SELECT ${video ? HYDRATE_COLUMNS_VIDEO : HYDRATE_COLUMNS} FROM posts WHERE id IN (SELECT value FROM json_each(?))`,
     [JSON.stringify(ids)]
   );
   const byId = new Map(rows.map((r) => [Number(r.id), r]));
@@ -299,15 +304,29 @@ export function scanPage(db, view, nav) {
 
 // scanPage (index-only, returns ids + pagination) then hydrateIds (fetch rows).
 // The worker runs the optional multi-range prefetch between the two.
-export function fetchPage(db, view, nav) {
+export function fetchPage(db, view, nav, hydrateOptions) {
   const page = scanPage(db, view, nav);
   return {
-    rows: hydrateIds(db, page.ids),
+    rows: hydrateIds(db, page.ids, hydrateOptions),
     firstKey: page.firstKey,
     lastKey: page.lastKey,
     hasPrev: page.hasPrev,
     hasNext: page.hasNext
   };
+}
+
+// --- video transcripts (schema_version >= 4) --------------------------------
+
+/**
+ * The transcript of the post with this id, or null when it has none.
+ * transcripts.id is the post's own id (INTEGER PRIMARY KEY), so this is one
+ * b-tree descent (EXPLAIN QUERY PLAN: SEARCH transcripts USING INTEGER PRIMARY
+ * KEY) plus the overflow pages of a long transcript; no posts row is read. Only
+ * call when the archive has the table.
+ */
+export function readTranscript(db, id) {
+  const transcript = db.selectValue('SELECT transcript FROM transcripts WHERE id = ?', [id]);
+  return transcript == null ? null : String(transcript);
 }
 
 // --- monthly histogram (Elemzés tab) ----------------------------------------

@@ -19,10 +19,10 @@ is no application server.
 
 Open the [live site](https://ferenci-tamas.github.io/fb-politika-archivum/) — no login, nothing to install; everything runs in your browser.
 
-- **Search** — type in the search box; results update as you type. Multiple words are AND-combined (`hiány növekedés` → posts with both). Use quotes for a phrase (`"védett ár"`), a trailing `*` for a prefix (`megszorít*`), `OR` between words (`Ukrajna OR ukrán`), and a leading `-` to exclude (`kormány -brüsszel`). Search is accent-insensitive by default — tick **Ékezetérzékeny** to match diacritics exactly; the **×** clears it.
+- **Search** — type in the search box; results update as you type. Multiple words are AND-combined (`hiány növekedés` → posts with both). Use quotes for a phrase (`"védett ár"`), a trailing `*` for a prefix (`megszorít*`), `OR` between words (`Ukrajna OR ukrán`), and a leading `-` to exclude (`kormány -brüsszel`). Search is accent-insensitive by default — tick **Ékezetérzékeny** to match diacritics exactly; the **×** clears it. **Keresés ebben** chooses where to look: **Poszt szövege** (the post text), **Csatolt videók** (the transcript of the post's video), or both (default). With both, a post and its video count as one document: `hiány növekedés` also finds a post that has one word in its text and the other in its video, and `kormány -brüsszel` excludes a post with "brüsszel" in either.
 - **Filter** — select one or more **authors** (type to filter the list; chosen authors appear as chips and are combined with OR) and/or a **date range**. **Szűrők törlése** resets everything.
 - **Sort** — newest first, oldest first, or by author (A→Z).
-- **Browse** — choose 50 / 100 / 250 rows per page and move with **Legújabb / Újabb / Régebbi / Legrégebbi** (first / newer / older / last). Long posts expand with **Megnyitás / Kevesebb**. In each row, **Poszt** opens the original Facebook post, and the numbered **Linkek** (green ✓ = reachable, red ✕ = not) and **Képek** open in a new tab.
+- **Browse** — choose 50 / 100 / 250 rows per page and move with **Legújabb / Újabb / Régebbi / Legrégebbi** (first / newer / older / last). Long posts expand with **Megnyitás / Kevesebb**. In each row, **Poszt** opens the original Facebook post, and the numbered **Linkek** (green ✓ = reachable, red ✕ = not) and **Képek** open in a new tab. When the post's video (attached, or the post itself) has a transcript, **Videó** shows a **Leirat** link: it opens the transcript in a dialog, from which it can be downloaded as a UTF-8 `.txt` file.
 
 Search, filters and sorting combine freely, and the footer shows how little of the database your session downloaded.
 
@@ -101,13 +101,14 @@ Key decisions:
 ## 2. SQLite schema
 
 The database is produced by [`SQLite-converter.R`](SQLite-converter.R) (schema
-version 3). Summary:
+version 4). Summary:
 
 | Table | Columns | Notes |
 |---|---|---|
-| `posts` | `id INTEGER PRIMARY KEY`, `postId TEXT`, `authorId INTEGER`, `url TEXT`, `time INTEGER`, `text TEXT`, `images TEXT`, `links TEXT` | `id` is 1..N in `(time, postId)` order. `images` = JSON `["name", …]`; `links` = JSON `[["url", 0\|1], …]`; both `NULL` when empty. |
+| `posts` | `id INTEGER PRIMARY KEY`, `postId TEXT`, `authorId INTEGER`, `url TEXT`, `time INTEGER`, `text TEXT`, `images TEXT`, `links TEXT`, `video INTEGER` | `id` is 1..N in `(time, postId)` order. `images` = JSON `["name", …]`; `links` = JSON `[["url", 0\|1], …]`; both `NULL` when empty. *(schema 4)* `video`: `NULL` = no video, `0` = a video without transcript, `1` = a video with transcript — lets a page of results show the **Leirat** links without touching `transcripts`. |
 | `links` | `id`, `postId`, `link`, `available` | Normalized 1:N; `id` clustered in the post's rowid range. |
 | `images` | `id`, `postId`, `filename` | Normalized 1:N; clustered likewise. |
+| `transcripts` | `id INTEGER PRIMARY KEY`, `postId`, `videoId`, `transcript` | *(schema 4)* 1:1 — one row per post whose video has a (non-empty) transcript; `id` **is the post's `posts.id`** (unlike `links.id`/`images.id`), `videoId` is the video's Facebook id. Kept out of `posts` so the long texts never weigh on the pages every query reads; the site fetches one only when its dialog opens (a single INTEGER PRIMARY KEY lookup). A post may have several videos, but at most one with a transcript (the converter checks this). Known Whisper hallucinations are filtered by the converter (`WHISPER_HALLUCINATION_LINES` / `_ALONE`): subtitle credits, "NAMASTE", "thanks for watching" and the like are removed as lines, and a transcript left with nothing but such phrases or generic thanks/greetings counts as missing (`posts.video = 0`). Repetition loops — a word or phrase of up to 30 words repeated 5+ times in a row, Whisper's degenerate output but also genuine chants — are cut back to their first 3 repetitions followed by `[…]` (`LOOP_*`; the mark has no letters, so the search ignores it). |
 | `authors` | `authorId`, `authorname`, `post_count`, `first_time`, `last_time` | `authorId` in Hungarian alphabetical order; precomputed stats. |
 | `word_monthly` | `authorId`, `ym`, `word`, `n` | *(schema 3)* Per author and `YYYY-MM`, that month's top ~10 content words — udpipe lemmas filtered to nouns, proper nouns and adjectives (stopwords/numbers removed) — with raw counts `n`; boundary ties may add a few. `WITHOUT ROWID`, keyed `(authorId, ym, word)` so one author is a single range read. Powers the **Leggyakoribb szavak** view. |
 | `word_month_totals` | `authorId`, `ym`, `tokens` | *(schema 3)* Per author and `YYYY-MM`, the cell's total content-word tokens — the denominator for the relative (share-of-content-words) mode of the **Leggyakoribb szavak** chart (can't be recovered from `word_monthly`, which keeps only the top words). `WITHOUT ROWID`, keyed `(authorId, ym)`. |
@@ -116,14 +117,27 @@ version 3). Summary:
 Indexes: `idx_posts_postId` (unique), `idx_posts_time`, `idx_posts_author_time
 (authorId DESC, time)`, `idx_images_postId`, `idx_links_postId`.
 
-Full-text (FTS5, external content over `posts.text`, `content_rowid = id`):
+Full-text (FTS5, external content, `content_rowid = id`). From schema 4 each index
+has two columns, `text` (`posts.text`) and `transcript` (`transcripts.transcript`),
+read through the view **`post_search`** (`posts LEFT JOIN transcripts`, one row per
+post), so no text is stored twice; up to schema 3 the content was `posts.text` alone:
 
 - **`posts_fts`** — `unicode61 remove_diacritics 0` (diacritic-sensitive: `kör ≠ kor`).
 - **`posts_fts_folded`** — `unicode61 remove_diacritics 2` (diacritic-insensitive and case-folding, including non-ASCII: `kör = kor = kór`, `Ő = ő`).
 
 The app searches `posts_fts_folded` by default (forgiving for Hungarian input) and
 switches to `posts_fts` when the **Ékezetérzékeny** (accent-sensitive) toggle is
-on.
+on. **Keresés ebben** becomes an FTS5 column filter around the whole expression
+(`scopeFtsMatch` in [`src/lib/fts-query.js`](src/lib/fts-query.js)): post text only
+→ `{text} : (…)`, videos only → `{transcript} : (…)`, both → no filter (a post
+matches when its text and transcript *together* satisfy the expression). Every
+variant is still one MATCH on one index, so the query plans, rowid (time) order and
+cheap counts below are unchanged. The **Elemzés** narratives offer the same choice,
+but default to the post text alone (`{text} : (…)`, as before transcripts existed):
+the share of posts with a transcript grew steeply over the years, so including them
+makes later years match more. When only the videos are searched, the ratio mode
+divides by the month's posts *with a transcript* (manifest `monthBounds[].transcripts`)
+instead of all posts, and its label says so.
 
 The `images`/`links` are also embedded as JSON in `posts`, so a page of results is
 hydrated with **one** query against `posts` alone — no 1:N joins, and no extra
@@ -177,20 +191,20 @@ contains two prefixes:
 ### Manifest format
 
 `latest.json` and each build's `manifest.json` share one JSON object whose shape is
-versioned by `MANIFEST_FORMAT` (currently **2**). It is versioned independently of
+versioned by `MANIFEST_FORMAT` (currently **4**). It is versioned independently of
 the SQLite `schema_version` because it describes how the archive is *split*, not
 what is in it. Clients treat unknown fields as optional.
 
 | Field | Meaning |
 |---|---|
-| `format` | Manifest format version (`2`). |
-| `schemaVersion` | The archive's `schema_version` (`3`), so a client can reject an archive it cannot read before fetching any data. |
+| `format` | Manifest format version (`4`). |
+| `schemaVersion` | The archive's `schema_version` (`4`), so a client can reject an archive it cannot read before fetching any data. The site reads 2–4; deploy a site that knows a new version *before* uploading an archive built with it. |
 | `builtAt` | Build id; also the folder name under `/database/`. |
 | `file` | Archive filename (for tooling that reassembles the parts). |
 | `size`, `md5` | Byte size and MD5 of the whole archive. |
 | `pageSize` | SQLite page size (`16384`). |
 | `partSize` | Bytes per part (all but the last). |
-| `monthBounds` | *(format 2+)* Array of `{ ym, lo }` — the smallest `id` in each `YYYY-MM`. Because `id` is assigned in `(time, postId)` order, these partition the archive by month exactly, so the **Elemzés** tab buckets search hits per month without scanning the time index in the browser. |
+| `monthBounds` | *(format 2+)* Array of `{ ym, lo }` — the smallest `id` in each `YYYY-MM`. Because `id` is assigned in `(time, postId)` order, these partition the archive by month exactly, so the **Elemzés** tab buckets search hits per month without scanning the time index in the browser. *(format 3+)* `links`, `unavail`: the month's link count and unavailable links (link-availability chart). *(format 4+)* `transcripts`: the month's posts with a video transcript, the ratio denominator of a narratives search in the videos alone. These counts have no cheap fallback in the browser. |
 | `parts` | Array of `{ name, offset, size, md5 }` — consecutive, page-aligned byte ranges that concatenate to the archive. |
 | `base` | *(`latest.json` only)* The build folder relative to `latest.json` (trailing slash), so a client resolves part names against it. |
 
@@ -346,8 +360,10 @@ R2_LIVE_TEST=1 npm test
 
 ## Security model
 
-- All post text and author names are rendered with `textContent` only — never
-  `innerHTML`. There is no HTML/JS execution from database content.
+- All post text, transcripts and author names are rendered with `textContent`
+  only — never `innerHTML`. There is no HTML/JS execution from database content.
+  A transcript download is a `Blob` (`text/plain;charset=utf-8`) built in the
+  browser, under an ASCII-only file name.
 - Every external URL (post, link, image) is validated to be absolute `http(s)`
   before becoming a link; `javascript:`, `data:`, `vbscript:`, `file:`, `mailto:`,
   relative and malformed URLs are rejected. Image filenames are
@@ -382,6 +398,7 @@ src/
     constants.js               Shared constants / VFS tuning
   ui/
     render.js                  Safe table-row rendering
+    transcript-dialog.js       Video transcript dialog + .txt download
     dom.js                     DOM helpers + validated external anchors
 tests/                         node:test unit + e2e + live-range tests
 r2-cors.json                   R2 CORS policy

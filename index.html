@@ -87,6 +87,19 @@
               <span id="filters-badge" class="filters-badge" aria-hidden="true" hidden></span>
               <span class="filters-toggle-caret" aria-hidden="true">⌄</span>
             </button>
+            <div id="search-in" class="search-in" role="group" aria-labelledby="search-in-label" hidden>
+              <span id="search-in-label" class="search-in-label">Keresés ebben:</span>
+              <span class="search-in-options">
+                <label class="accent-toggle">
+                  <input type="checkbox" id="search-in-text" checked />
+                  <span>Poszt szövege</span>
+                </label>
+                <label class="accent-toggle">
+                  <input type="checkbox" id="search-in-video" checked />
+                  <span>Csatolt videók</span>
+                </label>
+              </span>
+            </div>
             <label class="accent-toggle">
               <input type="checkbox" id="accent" />
               <span>Ékezetérzékeny</span>
@@ -101,6 +114,7 @@
                   <li><strong>Szókezdet</strong> – csillaggal a szó végén. Pl. <code>megszorít*</code></li>
                   <li><strong>Kizárás</strong> – az adott szó ne szerepeljen: mínusszal a szó előtt. Pl. <code>kormány -brüsszel</code></li>
                   <li>A keresés alapból <strong>ékezet- és kisbetű/nagybetű-független</strong>; pontos ékezettel keresés (kör ≠ kor) az <em>Ékezetérzékeny</em> bepipálásával.</li>
+                  <li><strong>Keresés ebben</strong> – a poszt szövegében és/vagy a csatolt videók gépi leiratában. Ha mindkettő be van jelölve, a poszt és a videója együtt számít: a <code>hiány növekedés</code> akkor is talál, ha az egyik szó csak a szövegben, a másik csak a videóban szerepel.</li>
                 </ul>
               </div>
             </details>
@@ -184,6 +198,7 @@
                   <th scope="col" class="col-post">Poszt</th>
                   <th scope="col" class="col-links">Linkek</th>
                   <th scope="col" class="col-images">Képek</th>
+                  <th scope="col" class="col-video">Videó</th>
                 </tr>
               </thead>
               <tbody id="results-body"></tbody>
@@ -279,13 +294,26 @@
                 <span>Beállítások</span>
                 <span class="filters-toggle-caret" aria-hidden="true">⌄</span>
               </button>
+              <div id="analysis-search-in" class="search-in" role="group" aria-labelledby="analysis-search-in-label" hidden>
+                <span id="analysis-search-in-label" class="search-in-label">Keresés ebben:</span>
+                <span class="search-in-options">
+                  <label class="accent-toggle">
+                    <input type="checkbox" id="analysis-search-in-text" checked />
+                    <span>Poszt szövege</span>
+                  </label>
+                  <label class="accent-toggle">
+                    <input type="checkbox" id="analysis-search-in-video" />
+                    <span>Csatolt videók</span>
+                  </label>
+                </span>
+              </div>
               <label class="accent-toggle">
                 <input type="checkbox" id="analysis-accent" />
                 <span>Ékezetérzékeny</span>
               </label>
               <label class="accent-toggle">
                 <input type="checkbox" id="analysis-ratio" checked />
-                <span>Az összes poszt számához viszonyítva</span>
+                <span id="analysis-ratio-label">Az összes poszt számához viszonyítva</span>
               </label>
               <details class="search-tips">
                 <summary>Keresési tippek</summary>
@@ -297,6 +325,7 @@
                     <li><strong>Szókezdet</strong> – csillaggal a szó végén. Pl. <code>megszorít*</code></li>
                     <li><strong>Kizárás</strong> – az adott szó ne szerepeljen: mínusszal a szó előtt. Pl. <code>kormány -brüsszel</code></li>
                     <li>A keresés alapból <strong>ékezet- és kisbetű/nagybetű-független</strong>; pontos ékezettel keresés (kör ≠ kor) az <em>Ékezetérzékeny</em> bepipálásával.</li>
+                    <li><strong>Keresés ebben</strong> – alapból csak a poszt szövegében; a csatolt videók gépi leirata is bevonható. Mivel a videós posztok aránya az idők során erősen nőtt, a videókkal együtt keresve a későbbi évek több találatot adnak. Ha csak a videókban keresünk, az arány a leirattal rendelkező posztok számához viszonyít.</li>
                   </ul>
                 </div>
               </details>
@@ -350,6 +379,27 @@
         </div>
       </section>
     </main>
+
+    <!-- Transcript of a post's video, opened from the "Leirat" links of the results
+         (see src/ui/transcript-dialog.js). Outside the tab panels, so hiding a panel
+         can never hide an open modal. -->
+    <dialog id="transcript-dialog" class="transcript-dialog" aria-labelledby="transcript-title" aria-describedby="transcript-meta">
+      <div class="transcript-panel">
+        <div class="transcript-head">
+          <div>
+            <h2 id="transcript-title" class="transcript-title">A videó leirata</h2>
+            <p id="transcript-meta" class="transcript-meta"></p>
+          </div>
+          <button type="button" class="dialog-close" data-dialog-close aria-label="Bezárás">×</button>
+        </div>
+        <p class="transcript-note">Gépi leirat, hibákat tartalmazhat. A […] sokszor ismétlődő, rövidített szakaszt jelöl.</p>
+        <div id="transcript-body" class="transcript-body" tabindex="0" role="region" aria-label="Leirat szövege" autofocus></div>
+        <div class="transcript-actions">
+          <button type="button" id="transcript-download" class="secondary" disabled>Letöltés (.txt)</button>
+          <button type="button" class="secondary" data-dialog-close>Bezárás</button>
+        </div>
+      </div>
+    </dialog>
 
     <script type="module" src="/src/main.js"></script>
 

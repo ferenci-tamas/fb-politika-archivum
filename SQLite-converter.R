@@ -26,19 +26,26 @@ COMPACT_FILE <- paste0(OUTPUT_FILE, ".compact")
 # b-tree shallow (benchmarked: a minor but free win for this read-only archive).
 PAGE_SIZE <- 16384L
 
-# Full-text indexes over posts.text (external content: the text is stored only
-# once). posts_fts keeps diacritics (kör != kor), posts_fts_folded removes them
-# (kör == kor == kór) for searching without accents. Both fold case, also for
-# non-ASCII letters (Ő == ő). The folded index roughly doubles the size of the
-# full-text index; set BUILD_FOLDED_FTS to FALSE to skip it.
+# Full-text indexes over the searchable text of a post, in two columns: text (the
+# post itself) and transcript (the transcript of its video, if any; schema_version
+# 4). External content: the text is stored only once, the indexes read it through
+# the FTS_CONTENT view (posts LEFT JOIN transcripts, one row per post). A query
+# without a column filter matches a post when its text and transcript together
+# satisfy it ("alma -korte" excludes a post with "korte" in either); the website
+# restricts a search to one of them with an FTS5 column filter, {text} : (...) or
+# {transcript} : (...). posts_fts keeps diacritics (kör != kor), posts_fts_folded
+# removes them (kör == kor == kór) for searching without accents. Both fold case,
+# also for non-ASCII letters (Ő == ő). The folded index roughly doubles the size of
+# the full-text index; set BUILD_FOLDED_FTS to FALSE to skip it.
 FTS_TOKENIZERS <- c(
   posts_fts = "unicode61 remove_diacritics 0",
   posts_fts_folded = "unicode61 remove_diacritics 2"
 )
 BUILD_FOLDED_FTS <- TRUE
 if (!BUILD_FOLDED_FTS) FTS_TOKENIZERS <- FTS_TOKENIZERS["posts_fts"]
+FTS_CONTENT <- "post_search"
 fts_definition <- function(tokenize) {
-  sprintf("text, content='posts', content_rowid='id', tokenize='%s'", tokenize)
+  sprintf("text, transcript, content='%s', content_rowid='id', tokenize='%s'", FTS_CONTENT, tokenize)
 }
 
 # The FTS5 structures must stay in on-disk format version 4.
@@ -51,7 +58,12 @@ FTS5_REQUIRED_VERSION <- 4L
 # page. 3: as 2, plus word_monthly (top words per author and year-month) and
 # word_month_totals (that cell's total content-word tokens, the denominator for
 # relative word frequencies) -- section 3b -- for the "Leggyakoribb szavak" view.
-SCHEMA_VERSION <- 3L
+# 4: as 3, plus video transcripts (section 1): the transcripts table (one row per
+# post whose video has a transcript, id = posts.id), posts.video (NULL: no video,
+# 0: a video without transcript, 1: a video with transcript), and a second column,
+# transcript, in both full-text indexes, whose external content is now the
+# FTS_CONTENT view instead of posts.
+SCHEMA_VERSION <- 4L
 
 # "format" of the parts manifest (manifest.json and latest.json, section 15).
 # It describes how the archive is split, not what is in it, so it is versioned
@@ -67,8 +79,11 @@ SCHEMA_VERSION <- 3L
 # concatenate to the archive; latest.json adds base, the build folder relative
 # to latest.json. A client treats monthBounds as optional: {ym, lo} can be rebuilt
 # with a time-index scan, but the link counts have no cheap fallback (they need a
-# links-table scan), so the chart relies on the manifest.
-MANIFEST_FORMAT <- 3L
+# links-table scan), so the chart relies on the manifest. 4: as 3, plus transcripts
+# in each monthBounds entry: that month's posts with a video transcript
+# (posts.video = 1), the denominator of the narratives view's ratio when it searches
+# the transcripts alone; like the link counts, it has no cheap fallback.
+MANIFEST_FORMAT <- 4L
 
 # Diagnostics only. Use words that definitely occur in the data.
 TEST_SEARCH_TERM <- "az"
@@ -116,6 +131,48 @@ HUNSPELL_DICT <- "hu-HU"
 WORD_CHUNK_SIZE <- 8000L
 WORD_CORES <- max(1L, parallel::detectCores() - 1L)
 
+# Whisper hallucinations (schema_version 4). The transcripts are automatic speech
+# recognition (Whisper), which, on music or silence, emits phrases learnt from the
+# subtitle files it was trained on instead of speech. Two kinds are filtered
+# (section 1), both matched against a normalised form: lower case, with every run of
+# characters other than letters and digits a single space ("Köszönöm, hogy
+# megnézted!" -> "köszönöm hogy megnézted").
+#  - WHISPER_HALLUCINATION_LINES, regular expressions for a whole line (one Whisper
+#    segment) made of one or more of them: never speech in these videos. Subtitle
+#    credits ("Feliratok az Amara.org közösségétől", "Feliratot készítette ..."), "Ha
+#    tetszett, kapcsold be az angol feliratot!", "NAMASTE", and "thanks for watching /
+#    for finding it", which mostly opens a video or interrupts a sentence instead of
+#    closing the video. Such lines are removed wherever they occur.
+#  - WHISPER_HALLUCINATION_ALONE, phrases: thanks and greetings, genuine within a
+#    speech ("Köszönöm szépen." closes many), but hallucinated when they are all a
+#    transcript says. Such a transcript counts as missing, like one without any
+#    letter or digit ("🎧", "..."): its post gets no "Leirat" (posts.video = 0).
+WHISPER_HALLUCINATION_LINES <- c(
+  "felirat\\w*( készített\\w*)? (az )?amara org közösség\\w*",
+  "felirat\\w* készített\\w* (namaste|a házakkal)",
+  "ha tetszett kapcsold be az angol feliratot",
+  "namaste",
+  "köszön(öm|jük) hogy meg(néztétek|nézted|néztél|találtad|találtátok)"
+)
+WHISPER_HALLUCINATION_ALONE <- c(
+  "köszönöm", "köszönöm szépen", "köszönjük", "köszönjük szépen",
+  "jó napot kívánok", "jó napot kívánunk", "jó étvágyat kívánunk", "sziasztok"
+)
+
+# Repetition loops (schema_version 4). Whisper's decoder can get stuck repeating a
+# word or phrase ("a különböző különböző különböző ..."), mostly where it renders
+# foreign, typically English, speech in Hungarian. A unit of 1 to LOOP_MAX_PERIOD
+# words repeated at least LOOP_MIN_REPEATS times in a row (ignoring case and
+# punctuation) is cut back to its first LOOP_KEEP_REPEATS repetitions, followed by
+# LOOP_MARK (section 1). Genuine chants ("Mocskos Fidesz! Mocskos Fidesz! ...")
+# cannot be told apart from loops by the text alone: they are shortened the same
+# way, and stay recognisable. LOOP_MARK has no letter or digit, so the full-text
+# index ignores it.
+LOOP_MIN_REPEATS <- 5L
+LOOP_KEEP_REPEATS <- 3L
+LOOP_MAX_PERIOD <- 30L
+LOOP_MARK <- "[…]"
+
 ###############################################################################
 # 1. INPUT
 ###############################################################################
@@ -126,6 +183,8 @@ posts <- toconvert$posts[, .(postId = as.character(postId), authorname = as.char
   time = round(as.numeric(as.POSIXct(toconvert$posts$time, tz = "UTC"))), text = as.character(text))][order(time, postId)]
 links <- toconvert$links[, .(postId = as.character(postId), link = as.character(link), available = as.integer(available))][order(postId)]
 images <- toconvert$media[media_type == "Photo" & !is.na(filename), .(postId = as.character(postId), filename = as.character(filename))][order(postId)]
+# A post can be a video itself (a reel) or have one attached; both are media rows.
+videos <- toconvert$media[media_type == "Video", .(postId = as.character(postId), videoId = as.character(media_id), transcript = as.character(transcript))]
 
 # Searched and displayed text is stored in Unicode NFC. Browsers send NFC, and a
 # diacritic-sensitive index would not match a decomposed "o" + U+0308 to "ö".
@@ -140,14 +199,142 @@ to_nfc <- function(x, label) {
 posts[, text := to_nfc(text, "posts$text")]
 posts[, authorname := to_nfc(stringi::stri_trim_both(authorname), "posts$authorname")]
 
+# Video transcripts (schema_version 4). Line endings become \n and outer whitespace
+# is trimmed; an empty transcript counts as none, and so does one made of Whisper
+# hallucinations only, whose hallucinated lines are removed otherwise (see
+# WHISPER_HALLUCINATION_LINES); repetition loops are cut back (see LOOP_MIN_REPEATS).
+# The media table lists some videos twice (same media_id, downloaded twice), and a
+# few of those were transcribed twice, with slightly different results: of these,
+# the longest is kept. A post may have several videos, but at most one with a
+# transcript (checked in section 2), which the website's single "Leirat" link per
+# post relies on.
+hallucination_key <- function(x) {
+  stringi::stri_trim_both(stringi::stri_replace_all_regex(stringi::stri_trans_tolower(x), "[^\\p{L}\\p{N}]+", " "))
+}
+# Drops the WHISPER_HALLUCINATION_LINES lines; NA when what is left has no letter or
+# digit, or nothing but WHISPER_HALLUCINATION_ALONE phrases.
+filter_hallucinations <- function(x) {
+  lines_rx <- sprintf("^(%1$s)( (%1$s))*$", paste(WHISPER_HALLUCINATION_LINES, collapse = "|"))
+  # Longest first, so that "köszönöm szépen" is not taken for "köszönöm".
+  alone_rx <- sprintf("\\b(%s)\\b", paste(WHISPER_HALLUCINATION_ALONE[order(-nchar(WHISPER_HALLUCINATION_ALONE))], collapse = "|"))
+  i <- which(!is.na(x))
+  parts <- stringi::stri_split_fixed(x[i], "\n")
+  l <- data.table(i = rep(i, lengths(parts)), line = unlist(parts))
+  # by = i keeps the lines of each transcript in their order.
+  kept <- l[!stringi::stri_detect_regex(hallucination_key(line), lines_rx),
+    .(t = stringi::stri_trim_both(paste(line, collapse = "\n"))), by = i]
+  out <- rep(NA_character_, length(x))
+  out[kept$i] <- kept$t
+  out[!is.na(out) & !stringi::stri_detect_regex(out, "[\\p{L}\\p{N}]")] <- NA_character_
+  out[!is.na(out) & !nzchar(stringi::stri_trim_both(stringi::stri_replace_all_regex(hallucination_key(out), alone_rx, "")))] <- NA_character_
+  out
+}
+# The repetition loops of x (see LOOP_MIN_REPEATS), one row each: doc (its index in
+# x), its first and last token (start, end), unit length in tokens (p), and the
+# characters to cut: from the first token after LOOP_KEEP_REPEATS repetitions
+# (cut_from) to the end of the loop (cut_to). Tokens are runs of letters and digits,
+# compared case-insensitively; LOOP_MARK is a token of its own, so a shortened loop
+# never joins the text around it into a new one. For every unit length, each
+# maximal run of repetitions is a candidate; of overlapping candidates, the one
+# covering most tokens (then the shortest unit) wins.
+find_loops <- function(x) {
+  none <- data.table(doc = integer(), start = integer(), end = integer(), p = integer(), cut_from = integer(), cut_to = integer())
+  i <- which(!is.na(x))
+  loc <- stringi::stri_locate_all_regex(x[i], sprintf("[\\p{L}\\p{N}]+|\\Q%s\\E", LOOP_MARK), omit_no_match = TRUE)
+  tok <- data.table(doc = rep(i, vapply(loc, nrow, 1L)), from = unlist(lapply(loc, function(m) m[, 1])),
+    to = unlist(lapply(loc, function(m) m[, 2])))
+  if (!nrow(tok)) return(none)
+  tok[, word := stringi::stri_trans_tolower(stringi::stri_sub(x[doc], from, to))]
+  tok[, `:=`(id = chmatch(word, unique(word)), pos = rowid(doc))]
+  runs <- rbindlist(lapply(seq_len(LOOP_MAX_PERIOD), function(p) {
+    ahead <- shift(tok$id, -p)
+    same <- !is.na(ahead) & tok$id == ahead & tok$doc == shift(tok$doc, -p)
+    r <- data.table(doc = tok$doc, pos = tok$pos, run = rleid(same))[same, .(start = pos[1], end = pos[.N] + p), by = .(doc, run)]
+    r[end - start + 1L >= LOOP_MIN_REPEATS * p, .(doc, start, end, p)]
+  }))
+  if (!nrow(runs)) return(none)
+  runs[, len := end - start]
+  setorder(runs, doc, -len, p)
+  first_fit <- function(start, end) {
+    taken <- logical(length(start))
+    for (k in seq_along(start)) taken[k] <- !any(taken & start <= end[k] & end >= start[k])
+    taken
+  }
+  runs <- runs[runs[, .I[first_fit(start, end)], by = doc]$V1][, len := NULL]
+  # A truncated last repetition ("... a választásokban a vá") goes with the loop.
+  nxt <- tok[.(runs$doc, runs$end + 1L), on = .(doc, pos), word]
+  expected <- tok[.(runs$doc, runs$end + 1L - runs$p), on = .(doc, pos), word]
+  runs[!is.na(nxt) & nchar(nxt) < nchar(expected) & startsWith(expected, nxt), end := end + 1L]
+  runs[, cut_from := tok[.(runs$doc, runs$start + LOOP_KEEP_REPEATS * runs$p), on = .(doc, pos), from]]
+  runs[, cut_to := tok[.(runs$doc, runs$end), on = .(doc, pos), to]]
+  runs[]
+}
+# Cuts each loop back to its first LOOP_KEEP_REPEATS repetitions plus LOOP_MARK,
+# until none is left (cutting one rarely brings a lesser, overlapping one to the
+# fore). Returns x, with the number of loops cut and of transcripts affected as
+# attributes.
+collapse_loops <- function(x) {
+  todo <- which(!is.na(x))
+  n_loops <- 0L
+  affected <- integer()
+  repeat {
+    loops <- find_loops(x[todo])
+    if (!nrow(loops)) break
+    loops[, doc := todo[doc]]
+    # Right to left within a transcript, so that the positions still to cut hold.
+    for (k in order(loops$doc, -loops$cut_from)) {
+      s <- x[[loops$doc[k]]]
+      # The punctuation that closed the last repetition goes too ("Viktor!" -> "Viktor").
+      rest <- stringi::stri_replace_first_regex(stringi::stri_sub(s, loops$cut_to[k] + 1L), "^[^\\s\\p{L}\\p{N}]+", "")
+      # So does a joiner left hanging ("Na-na-na-", "2.2.2."), and a space sets off the mark.
+      kept <- stringi::stri_replace_first_regex(stringi::stri_sub(s, 1L, loops$cut_from[k] - 1L), "[^\\s\\p{L}\\p{N}]+\\z", "")
+      if (!stringi::stri_detect_regex(kept, "\\s\\z")) kept <- paste0(kept, " ")
+      x[[loops$doc[k]]] <- paste0(kept, LOOP_MARK, rest)
+    }
+    n_loops <- n_loops + nrow(loops)
+    affected <- union(affected, loops$doc)
+    todo <- unique(loops$doc)
+  }
+  structure(x, loops = n_loops, transcripts = length(affected))
+}
+videos[, transcript := to_nfc(stringi::stri_trim_both(stringi::stri_replace_all_regex(transcript, "\r\n?", "\n")), "videos$transcript")]
+videos[!nzchar(transcript), transcript := NA_character_]
+local({
+  filtered <- filter_hallucinations(videos$transcript)
+  had <- !is.na(videos$transcript)
+  cat("Whisper hallucinations: removed from ", uniqueN(videos[had & !is.na(filtered) & filtered != transcript, .(postId, videoId)]),
+    " transcripts, which keep the rest; ", uniqueN(videos[had & is.na(filtered), .(postId, videoId)]),
+    " transcripts were nothing else and count as missing\n", sep = "")
+  videos[, transcript := filtered]
+})
+# Once per distinct text (the same video can be listed twice).
+local({
+  texts <- unique(videos$transcript[!is.na(videos$transcript)])
+  collapsed <- collapse_loops(texts)
+  # Cutting a truncated last repetition can leave nothing but thanks or greetings.
+  cleaned <- filter_hallucinations(as.vector(collapsed))
+  cat("Repetition loops: ", attr(collapsed, "loops"), " loops of ", LOOP_MIN_REPEATS, " or more repetitions in ",
+    attr(collapsed, "transcripts"), " transcripts cut back to ", LOOP_KEEP_REPEATS, " repetitions (",
+    round(sum(nchar(texts) - nchar(as.vector(collapsed))) / 1e6, 2), " million characters removed); ",
+    sum(is.na(cleaned)), " transcripts were left with hallucinations only and count as missing\n", sep = "")
+  videos[!is.na(transcript), transcript := cleaned[chmatch(transcript, texts)]]
+})
+transcripts <- unique(videos[!is.na(transcript)])
+transcripts[, len := nchar(transcript)]
+setorder(transcripts, postId, videoId, -len, transcript)
+n_retranscribed <- transcripts[, .N, by = .(postId, videoId)][N > 1, .N]
+transcripts <- unique(transcripts, by = c("postId", "videoId"))[, len := NULL][]
+posts[, video := fifelse(postId %chin% transcripts$postId, 1L, fifelse(postId %chin% videos$postId, 0L, NA_integer_))]
+
 ###############################################################################
 # 2. VALIDATION
 ###############################################################################
 
-for (tbl in c("posts", "links", "images")) {
+for (tbl in c("posts", "links", "images", "videos")) {
   if (anyNA(get(tbl)$postId)) stop(tbl, "$postId contains NA values.")
   if (any(trimws(get(tbl)$postId) == "")) stop(tbl, "$postId contains empty strings.")
 }
+if (anyNA(videos$videoId) || any(trimws(videos$videoId) == "")) stop("videos$videoId contains NA values or empty strings.")
 
 # posts.postId is the primary key, so duplicates would abort the load anyway.
 if (anyDuplicated(posts$postId)) {
@@ -160,12 +347,20 @@ if (anyNA(posts$time)) stop("posts$time contains NA values.")
 if (!all(links$available %in% c(0L, 1L))) stop("links$available must be 0 or 1.")
 
 # The foreign keys reject child rows without a post, so they must be handled here.
+# Videos have no table of their own, but posts.video would silently miss them.
 orphan_links <- !links$postId %chin% posts$postId
 orphan_images <- !images$postId %chin% posts$postId
-if (any(orphan_links) || any(orphan_images)) {
-  stop(sprintf("%d links and %d images refer to a postId that is not in posts.", sum(orphan_links), sum(orphan_images)))
+orphan_videos <- !videos$postId %chin% posts$postId
+if (any(orphan_links) || any(orphan_images) || any(orphan_videos)) {
+  stop(sprintf("%d links, %d images and %d videos refer to a postId that is not in posts.",
+    sum(orphan_links), sum(orphan_images), sum(orphan_videos)))
 }
-rm(orphan_links, orphan_images)
+rm(orphan_links, orphan_images, orphan_videos)
+
+# The website shows one transcript per post (a single "Leirat" link, no numbering).
+if (anyDuplicated(transcripts$postId)) {
+  stop(uniqueN(transcripts$postId[duplicated(transcripts$postId)]), " posts have more than one video with a transcript.")
+}
 
 # Reported, not fatal
 n_missing <- function(x) sum(is.na(x) | !nzchar(x))
@@ -176,7 +371,14 @@ cat("links$link missing: ", n_missing(links$link), ", not http(s): ", n_not_http
 cat("images$filename missing: ", n_missing(images$filename), ", containing path characters: ",
   sum(grepl("[/\\\\]|^\\.", images$filename)), "\n", sep = "")
 
-cat("posts: ", nrow(posts), ", links: ", nrow(links), ", images: ", nrow(images), "\n", sep = "")
+cat("videos: ", nrow(videos), " rows, ", uniqueN(videos[, .(postId, videoId)]), " distinct videos in ",
+  uniqueN(videos$postId), " posts (", videos[, uniqueN(videoId), by = postId][V1 > 1, .N],
+  " posts with more than one distinct video)\n", sep = "")
+cat("transcripts: ", nrow(transcripts), " (", uniqueN(videos[, .(postId, videoId)]) - nrow(transcripts),
+  " videos have none, an empty one or hallucinations only; ", n_retranscribed,
+  " were transcribed twice with different results, the longest kept)\n", sep = "")
+
+cat("posts: ", nrow(posts), ", links: ", nrow(links), ", images: ", nrow(images), ", transcripts: ", nrow(transcripts), "\n", sep = "")
 cat("time range (UTC):", format(as.POSIXct(range(posts$time), tz = "UTC")), "\n")
 
 ###############################################################################
@@ -194,7 +396,7 @@ authors[, authorId := .I]
 rm(author_names)
 
 posts[, authorId := match(authorname, authors$authorname)]
-posts <- posts[, .(postId, authorId, url, time, text)]
+posts <- posts[, .(postId, authorId, url, time, text, video)]
 authors <- merge(authors, posts[, .(post_count = .N, first_time = min(time), last_time = max(time)), .(authorId)], by = "authorId")
 cat("authors: ", nrow(authors), " (including ", sum(is.na(authors$authorname)), " unknown-author row)\n", sep = "")
 
@@ -381,9 +583,10 @@ if (any(file.exists(work_files))) stop("Old work files are still in use (restart
 stage <- dbConnect(SQLite(), STAGE_FILE)
 dbGetQuery(stage, "PRAGMA journal_mode = OFF")
 dbExecute(stage, "PRAGMA synchronous = OFF")
-dbExecute(stage, "CREATE TABLE posts (postId TEXT, authorId INTEGER, url TEXT, time INTEGER, text TEXT)")
+dbExecute(stage, "CREATE TABLE posts (postId TEXT, authorId INTEGER, url TEXT, time INTEGER, text TEXT, video INTEGER)")
 dbExecute(stage, "CREATE TABLE links (postId TEXT, link TEXT, available INTEGER)")
 dbExecute(stage, "CREATE TABLE images (postId TEXT, filename TEXT)")
+dbExecute(stage, "CREATE TABLE transcripts (postId TEXT, videoId TEXT, transcript TEXT)")
 dbExecute(stage, "CREATE TABLE authors (authorId INTEGER, authorname TEXT, post_count INTEGER, first_time INTEGER, last_time INTEGER)")
 dbExecute(stage, "CREATE TABLE word_monthly (authorId INTEGER, ym TEXT, word TEXT, n INTEGER)")
 dbExecute(stage, "CREATE TABLE word_month_totals (authorId INTEGER, ym TEXT, tokens INTEGER)")
@@ -392,6 +595,7 @@ dbWithTransaction(stage, {
   dbAppendTable(stage, "posts", posts)
   dbAppendTable(stage, "links", links)
   dbAppendTable(stage, "images", images)
+  dbAppendTable(stage, "transcripts", transcripts)
   dbAppendTable(stage, "word_monthly", word_monthly)
   dbAppendTable(stage, "word_month_totals", word_month_totals)
 })
@@ -437,6 +641,11 @@ dbExecute(con, "ATTACH DATABASE ? AS stage", params = list(STAGE_FILE))
 # renumbered by VACUUM, a dump/reload or another tool copying the table, and
 # the search would then silently return the wrong posts. postId is unique through
 # idx_posts_postId, built right after the posts are loaded (section 7).
+#
+# video (schema_version 4) tells a page of posts which ones have a transcript
+# without a lookup in the transcripts table: NULL when the post has no video, 0
+# when it has one without a transcript, 1 when it has a transcript. NULL, 0 and 1
+# take no space in the record body, only one byte of its header.
 dbExecute(con, "
   CREATE TABLE posts (
       id       INTEGER PRIMARY KEY,
@@ -446,7 +655,8 @@ dbExecute(con, "
       time     INTEGER NOT NULL,
       text     TEXT,
       images   TEXT CHECK (images IS NULL OR (json_valid(images) AND json_type(images) = 'array' AND json_array_length(images) > 0)),
-      links    TEXT CHECK (links IS NULL OR (json_valid(links) AND json_type(links) = 'array' AND json_array_length(links) > 0))
+      links    TEXT CHECK (links IS NULL OR (json_valid(links) AND json_type(links) = 'array' AND json_array_length(links) > 0)),
+      video    INTEGER CHECK (video IN (0, 1))
   )"
 )
 
@@ -470,6 +680,28 @@ dbExecute(con, "
       FOREIGN KEY (postId) REFERENCES posts(postId)
   )"
 )
+
+# Video transcripts (schema_version 4): one row per post whose video has one, kept
+# out of posts so that the long texts never weigh on the posts pages every query
+# reads; the website fetches a transcript only when it is opened. Unlike the ids of
+# links and images, id is the post's own id (posts.id), so a lookup is a single
+# INTEGER PRIMARY KEY descent and the transcript is the FTS_CONTENT view's second
+# column under the post's rowid. videoId is the video's Facebook id (media_id).
+dbExecute(con, "
+  CREATE TABLE transcripts (
+      id         INTEGER PRIMARY KEY REFERENCES posts(id),
+      postId     TEXT NOT NULL REFERENCES posts(postId),
+      videoId    TEXT NOT NULL,
+      transcript TEXT NOT NULL CHECK (length(transcript) > 0)
+  )"
+)
+
+# The external content of the full-text indexes (section 9): every post, with the
+# transcript of its video or NULL. A view, so no text is stored twice.
+dbExecute(con, sprintf("
+  CREATE VIEW %s AS
+  SELECT p.id AS id, p.text AS text, t.transcript AS transcript
+  FROM posts AS p LEFT JOIN transcripts AS t ON t.id = p.id", FTS_CONTENT))
 
 # One row per distinct author name
 dbExecute(con, "
@@ -559,8 +791,8 @@ dbExecute(con, "
 )
 
 dbExecute(con, "
-  INSERT INTO posts (id, postId, authorId, url, time, text, images, links)
-  SELECT row_number() OVER (ORDER BY p.time, p.postId), p.postId, p.authorId, p.url, p.time, p.text, c.images, c.links
+  INSERT INTO posts (id, postId, authorId, url, time, text, images, links, video)
+  SELECT row_number() OVER (ORDER BY p.time, p.postId), p.postId, p.authorId, p.url, p.time, p.text, c.images, c.links, p.video
   FROM stage.posts AS p
   LEFT JOIN temp.post_children AS c ON c.postId = p.postId
   ORDER BY p.time, p.postId"
@@ -595,6 +827,15 @@ load_children <- function(table, columns, stride) {
 load_children("links", c("postId", "link", "available"), link_stride)
 load_children("images", c("postId", "filename"), image_stride)
 
+# At most one per post (section 2), stored under the post's own id.
+dbExecute(con, "
+  INSERT INTO main.transcripts (id, postId, videoId, transcript)
+  SELECT m.r, s.postId, s.videoId, s.transcript
+  FROM stage.transcripts AS s
+  JOIN temp.post_rowid AS m ON m.postId = s.postId
+  ORDER BY m.r"
+)
+
 dbCommit(con)
 dbExecute(con, "DROP TABLE temp.post_rowid")
 dbExecute(con, "DROP TABLE temp.post_children")
@@ -623,10 +864,12 @@ dbExecute(con, "CREATE INDEX idx_links_postId ON links(postId)")
 ###############################################################################
 # 9. FULL-TEXT INDEXES (FTS5, external content)
 #
-# Each index covers posts.text without storing a second copy of it; its rowid
-# is posts.id. Each is built and merged ('optimize') in a scratch file, and
-# its shadow tables are then copied in key order. Building it in place would
-# scatter the merged segment over pages freed by intermediate segments.
+# Each index covers posts.text and transcripts.transcript, through the
+# FTS_CONTENT view, without storing a second copy of them; its rowid is posts.id.
+# Each is built and merged ('optimize') in a scratch file, from a table copy of
+# the view, and its shadow tables are then copied in key order. Building it in
+# place would scatter the merged segment over pages freed by intermediate
+# segments.
 ###############################################################################
 
 # The same tokenizers run in the browser on the search terms, so their handling
@@ -654,10 +897,11 @@ for (fts in names(FTS_TOKENIZERS)) {
 dbExecute(con, "ATTACH DATABASE ? AS scratch", params = list(FTS_SCRATCH_FILE))
 dbGetQuery(con, "PRAGMA scratch.journal_mode = OFF")
 dbExecute(con, "PRAGMA scratch.synchronous = OFF")
-# The FTS5 content table must be in the same schema as the FTS5 table.
-# Same content_rowid column ('id') as main.posts, as both use fts_definition().
-dbExecute(con, "CREATE TABLE scratch.posts (id INTEGER PRIMARY KEY, text TEXT)")
-dbExecute(con, "INSERT INTO scratch.posts (id, text) SELECT id, text FROM main.posts ORDER BY id")
+# The FTS5 content table must be in the same schema as the FTS5 table: a table in
+# scratch, the view in main, with the same name and columns, as both use
+# fts_definition().
+dbExecute(con, sprintf("CREATE TABLE scratch.%s (id INTEGER PRIMARY KEY, text TEXT, transcript TEXT)", FTS_CONTENT))
+dbExecute(con, sprintf("INSERT INTO scratch.%1$s (id, text, transcript) SELECT id, text, transcript FROM main.%1$s ORDER BY id", FTS_CONTENT))
 
 for (fts in names(FTS_TOKENIZERS)) {
   definition <- fts_definition(FTS_TOKENIZERS[[fts]])
@@ -699,6 +943,7 @@ dbExecute(con, "
   UNION ALL SELECT 'post_count', count(*) FROM posts
   UNION ALL SELECT 'link_count', count(*) FROM links
   UNION ALL SELECT 'image_count', count(*) FROM images
+  UNION ALL SELECT 'transcript_count', count(*) FROM transcripts
   UNION ALL SELECT 'author_count', count(*) FROM authors
   UNION ALL SELECT 'min_time', min(time) FROM posts
   UNION ALL SELECT 'max_time', max(time) FROM posts
@@ -717,18 +962,34 @@ counts <- dbGetQuery(con, paste(c(
   "SELECT 'posts', (SELECT count(*) FROM posts)",
   "SELECT 'links', (SELECT count(*) FROM links)",
   "SELECT 'images', (SELECT count(*) FROM images)",
+  "SELECT 'transcripts', (SELECT count(*) FROM transcripts)",
   sprintf("SELECT '%1$s', (SELECT count(*) FROM %1$s)", names(FTS_TOKENIZERS))
 ), collapse = " UNION ALL "))
 print(counts)
-check(all(counts$n == c(nrow(authors), nrow(posts), nrow(links), nrow(images), rep(nrow(posts), length(FTS_TOKENIZERS)))),
+check(all(counts$n == c(nrow(authors), nrow(posts), nrow(links), nrow(images), nrow(transcripts), rep(nrow(posts), length(FTS_TOKENIZERS)))),
   "row counts match the input")
 
 # Equal counts + unique postId: an empty EXCEPT means identical content.
 check(scalar("
   SELECT count(*) FROM (
-    SELECT postId, authorId, url, time, text FROM stage.posts
-    EXCEPT SELECT postId, authorId, url, time, text
+    SELECT postId, authorId, url, time, text, video FROM stage.posts
+    EXCEPT SELECT postId, authorId, url, time, text, video
     FROM main.posts)") == 0, "posts identical to the input")
+
+# postId is unique in transcripts too (section 2), so the same reasoning applies.
+check(scalar("
+  SELECT count(*) FROM (
+    SELECT postId, videoId, transcript FROM stage.transcripts
+    EXCEPT SELECT postId, videoId, transcript FROM main.transcripts)") == 0, "transcripts identical to the input")
+check(scalar("SELECT count(*) FROM transcripts AS t LEFT JOIN posts AS p ON p.id = t.id WHERE p.postId IS NOT t.postId") == 0,
+  "every transcript is stored under its post's id")
+check(scalar("SELECT count(*) FROM posts AS p WHERE (p.video IS 1) <> EXISTS (SELECT 1 FROM transcripts AS t WHERE t.id = p.id)") == 0,
+  "posts.video is 1 exactly for the posts with a transcript")
+# Cleaning the stored transcripts again finds nothing left to clean.
+check(local({
+  stored <- dbGetQuery(con, "SELECT transcript FROM transcripts")$transcript
+  identical(filter_hallucinations(stored), stored) && nrow(find_loops(stored)) == 0
+}), "no transcript holds a known Whisper hallucination or a repetition loop, or consists of hallucinations only")
 
 # Including the position within the post also verifies that link/image order is kept.
 for (tbl in c("links", "images")) {
@@ -801,12 +1062,13 @@ check(scalar("
   "kept word counts never exceed the cell token total")
 
 # id must be the rowid alias (the only primary key column, declared INTEGER) in
-# posts, links and images, so that no copy of the file can renumber the rows.
+# posts, links, images and transcripts, so that no copy of the file can renumber
+# the rows.
 check(scalar("
-  SELECT count(*) = 3 AND sum(c.name = 'id' AND upper(c.type) = 'INTEGER') = 3
-  FROM (SELECT 'posts' AS t UNION ALL SELECT 'links' UNION ALL SELECT 'images') AS x
+  SELECT count(*) = 4 AND sum(c.name = 'id' AND upper(c.type) = 'INTEGER') = 4
+  FROM (SELECT 'posts' AS t UNION ALL SELECT 'links' UNION ALL SELECT 'images' UNION ALL SELECT 'transcripts') AS x
   JOIN pragma_table_info(x.t) AS c
-  WHERE c.pk > 0") == 1, "posts, links and images have an INTEGER PRIMARY KEY id (rowid alias)")
+  WHERE c.pk > 0") == 1, "posts, links, images and transcripts have an INTEGER PRIMARY KEY id (rowid alias)")
 check(scalar("SELECT \"unique\" FROM pragma_index_list('posts') WHERE name = 'idx_posts_postId'") == 1,
   "postId is unique (idx_posts_postId)")
 check(scalar("SELECT max(id) = count(*) AND min(id) = 1 FROM posts") == 1, "posts ids are 1..n")
@@ -824,8 +1086,8 @@ for (x in list(list("links", link_stride), list("images", image_stride))) {
 }
 
 meta <- dbGetQuery(con, "SELECT key, value FROM archive_meta")
-check(all(as.numeric(meta$value[match(c("post_count", "link_count", "image_count", "author_count", "link_stride", "image_stride", "schema_version", "min_id", "max_id"), meta$key)]) ==
-  c(nrow(posts), nrow(links), nrow(images), nrow(authors), link_stride, image_stride, SCHEMA_VERSION,
+check(all(as.numeric(meta$value[match(c("post_count", "link_count", "image_count", "transcript_count", "author_count", "link_stride", "image_stride", "schema_version", "min_id", "max_id"), meta$key)]) ==
+  c(nrow(posts), nrow(links), nrow(images), nrow(transcripts), nrow(authors), link_stride, image_stride, SCHEMA_VERSION,
     scalar("SELECT min(id) FROM posts"), scalar("SELECT max(id) FROM posts"))), "archive_meta counts, schema version and id range")
 
 for (fts in names(FTS_TOKENIZERS)) {
@@ -836,10 +1098,25 @@ for (fts in names(FTS_TOKENIZERS)) {
 dbExecute(con, "DETACH DATABASE stage")
 unlink(STAGE_FILE)
 
-# Raises an error if a full-text index does not match posts.text.
+# Raises an error if a full-text index does not match posts.text and the
+# transcripts (read through the FTS_CONTENT view).
 for (fts in names(FTS_TOKENIZERS)) {
   dbExecute(con, sprintf("INSERT INTO %1$s (%1$s, rank) VALUES ('integrity-check', 1)", fts))
   cat("OK:", fts, "FTS5 integrity-check\n")
+}
+
+# The column filters the website uses. For a single term, the unrestricted match
+# is exactly the union of the two restricted ones, and a match restricted to the
+# transcript column can only be a post with a transcript.
+scope_match <- function(column, term) sprintf('{%s} : ("%s")', column, term)
+for (fts in names(FTS_TOKENIZERS)) {
+  fts_count <- function(sql_match) scalar(sprintf("SELECT count(*) FROM %1$s WHERE %1$s MATCH ?", fts), list(sql_match))
+  check(fts_count(sprintf('"%s"', TEST_SEARCH_TERM)) == scalar(sprintf("
+      SELECT count(*) FROM (SELECT rowid FROM %1$s WHERE %1$s MATCH ? UNION SELECT rowid FROM %1$s WHERE %1$s MATCH ?)", fts),
+      list(scope_match("text", TEST_SEARCH_TERM), scope_match("transcript", TEST_SEARCH_TERM))) &&
+    scalar(sprintf("SELECT count(*) FROM posts WHERE video IS NOT 1 AND id IN (SELECT rowid FROM %1$s WHERE %1$s MATCH ?)", fts),
+      list(scope_match("transcript", TEST_SEARCH_TERM))) == 0,
+    paste(fts, "column filters: all = text OR transcript, transcript matches only posts with a transcript"))
 }
 
 check(identical(dbGetQuery(con, "PRAGMA integrity_check")[[1]], "ok"), "PRAGMA integrity_check")
@@ -963,6 +1240,27 @@ print(rbindlist(lapply(names(FTS_TOKENIZERS), function(fts) data.table(
     scalar(sprintf("SELECT count(*) FROM %1$s WHERE %1$s MATCH ?", fts), list(sprintf('"%s"', term))), numeric(1))
 ))))
 
+cat("\n## Search scope (schema_version 4): matching posts per FTS5 column filter\n")
+print(rbindlist(lapply(names(FTS_TOKENIZERS), function(fts) data.table(
+  index = fts,
+  term = TEST_DIACRITIC_TERMS[1],
+  all = scalar(sprintf("SELECT count(*) FROM %1$s WHERE %1$s MATCH ?", fts), list(sprintf('"%s"', TEST_DIACRITIC_TERMS[1]))),
+  text = scalar(sprintf("SELECT count(*) FROM %1$s WHERE %1$s MATCH ?", fts), list(scope_match("text", TEST_DIACRITIC_TERMS[1]))),
+  transcript = scalar(sprintf("SELECT count(*) FROM %1$s WHERE %1$s MATCH ?", fts), list(scope_match("transcript", TEST_DIACRITIC_TERMS[1])))
+))))
+
+fts_video <- diagnose(paste0("Full-text search '", TEST_SEARCH_TERM, "' in the transcripts only, chronological via rowid"), "
+  SELECT rowid AS r FROM posts_fts
+  WHERE posts_fts MATCH ?
+  ORDER BY rowid DESC LIMIT ?", list(scope_match("transcript", TEST_SEARCH_TERM), TEST_LIMIT))
+check(!any(grepl("TEMP B-TREE", attr(fts_video, "plan"))), "a column-filtered search needs no sorting step")
+
+if (nrow(fts_video)) {
+  transcript_1 <- diagnose("Transcript of one post (by posts.id)", "
+    SELECT transcript FROM transcripts WHERE id = ?", list(fts_video$r[1]))
+  check(nrow(transcript_1) == 1 && nzchar(transcript_1$transcript), "the transcript of a matching post can be read by its id")
+}
+
 cat("\n## Embedded images/links\n")
 print(dbGetQuery(con, "
   SELECT count(images) AS posts_with_images, count(links) AS posts_with_links,
@@ -1008,9 +1306,10 @@ dbExecute(con, "VACUUM INTO ?", params = list(COMPACT_FILE))
 dbExecute(con, "ATTACH DATABASE ? AS compact", params = list(COMPACT_FILE))
 # Equal row counts + unique keys: an empty one-way EXCEPT means identical tables.
 for (x in list(
-  list("posts", "id, postId, authorId, url, time, text, images, links"),
+  list("posts", "id, postId, authorId, url, time, text, images, links, video"),
   list("links", "id, postId, link, available"),
   list("images", "id, postId, filename"),
+  list("transcripts", "id, postId, videoId, transcript"),
   list("authors", "authorId, authorname, post_count, first_time, last_time"),
   list("word_monthly", "authorId, ym, word, n"),
   list("word_month_totals", "authorId, ym, tokens"),
@@ -1110,17 +1409,21 @@ if (SPLIT_FOR_CDN) local({
   # exactly; shipping these saves the browser a full scan of the time index on the
   # first search (see src/lib/monthly.js). Each row also carries that month's link
   # counts -- total and unavailable, via a LEFT JOIN so post-months with no links are
-  # kept with zeros -- for the link-availability chart; unlike lo, these cannot be
-  # cheaply recomputed in the browser, so the manifest is their only source. jsonlite
-  # serializes this data.frame as an array of {ym, lo, links, unavail} records.
+  # kept with zeros -- for the link-availability chart, and its posts with a video
+  # transcript (MANIFEST_FORMAT 4; DISTINCT, as the join repeats a post per link);
+  # unlike lo, these cannot be cheaply recomputed in the browser, so the manifest is
+  # their only source. jsonlite serializes this data.frame as an array of {ym, lo,
+  # links, unavail, transcripts} records.
   month_bounds <- dbGetQuery(ro,
     "SELECT strftime('%Y-%m', p.time, 'unixepoch') AS ym,
             MIN(p.id) AS lo,
             COUNT(l.available) AS links,
-            SUM(CASE WHEN l.available = 0 THEN 1 ELSE 0 END) AS unavail
+            SUM(CASE WHEN l.available = 0 THEN 1 ELSE 0 END) AS unavail,
+            COUNT(DISTINCT CASE WHEN p.video = 1 THEN p.id END) AS transcripts
      FROM posts p LEFT JOIN links l ON l.postId = p.postId
      GROUP BY ym ORDER BY lo")
   dbDisconnect(ro)
+  check(sum(month_bounds$transcripts) == nrow(transcripts), "monthBounds transcript counts add up to the transcripts")
   version_dir <- file.path(CDN_PARTS_DIR, built_at)
   unlink(version_dir, recursive = TRUE)
   dir.create(version_dir, recursive = TRUE)

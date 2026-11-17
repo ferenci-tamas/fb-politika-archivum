@@ -2,7 +2,14 @@
 // Deep links carry the query only — filters, search, sort, page size — never the
 // pagination position (shared links reopen on the first page). Authors are carried
 // by NAME (stable across rebuilds, unlike the build-local authorId); the caller
-// maps names <-> ids. Dates are the YYYY-MM-DD input strings.
+// maps names <-> ids. Dates are the YYYY-MM-DD input strings. The search scope
+// ("Keresés ebben") travels as `in=text` or `in=video`; the default (both) is
+// omitted.
+
+import { SEARCH_IN } from './constants.js';
+
+const SEARCH_IN_PARAM_VALUES = [SEARCH_IN.TEXT, SEARCH_IN.VIDEO];
+const SEARCH_IN_VALUES = [SEARCH_IN.ALL, SEARCH_IN.TEXT, SEARCH_IN.VIDEO];
 
 function isDateInput(s) {
   if (typeof s !== 'string') return false;
@@ -14,7 +21,7 @@ function isDateInput(s) {
 }
 
 /**
- * @param {{search:string, accentSensitive:boolean, authorNames:string[], dateFrom:string, dateTo:string, sort:string, pageSize:number}} view
+ * @param {{search:string, accentSensitive:boolean, searchIn?:string, authorNames:string[], dateFrom:string, dateTo:string, sort:string, pageSize:number}} view
  * @param {{defaultSort:string, defaultPageSize:number}} opts
  * @returns {string} the hash body (without a leading '#'); '' when all defaults
  */
@@ -22,6 +29,7 @@ export function encodeViewToHash(view, opts) {
   const p = new URLSearchParams();
   if (view.search && view.search.trim() !== '') p.set('q', view.search);
   if (view.accentSensitive) p.set('accent', '1');
+  if (SEARCH_IN_PARAM_VALUES.includes(view.searchIn)) p.set('in', view.searchIn);
   for (const name of view.authorNames || []) if (name && name.trim() !== '') p.append('author', name);
   if (isDateInput(view.dateFrom)) p.set('from', view.dateFrom);
   if (isDateInput(view.dateTo)) p.set('to', view.dateTo);
@@ -33,7 +41,7 @@ export function encodeViewToHash(view, opts) {
 /**
  * @param {string} hash the location hash (leading '#' optional)
  * @param {{validSorts:string[], pageSizes:number[], defaultSort:string, defaultPageSize:number}} opts
- * @returns {{search:string, accentSensitive:boolean, authorNames:string[], dateFrom:string, dateTo:string, sort:string, pageSize:number}}
+ * @returns {{search:string, accentSensitive:boolean, searchIn:string, authorNames:string[], dateFrom:string, dateTo:string, sort:string, pageSize:number}}
  */
 export function decodeHashToView(hash, opts) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
@@ -41,9 +49,11 @@ export function decodeHashToView(hash, opts) {
   const size = Number(p.get('size'));
   const from = p.get('from');
   const to = p.get('to');
+  const searchIn = p.get('in');
   return {
     search: p.get('q') || '',
     accentSensitive: p.get('accent') === '1',
+    searchIn: SEARCH_IN_PARAM_VALUES.includes(searchIn) ? searchIn : SEARCH_IN.ALL,
     authorNames: p.getAll('author').filter((n) => n && n.trim() !== ''),
     dateFrom: isDateInput(from) ? from : '',
     dateTo: isDateInput(to) ? to : '',
@@ -54,8 +64,10 @@ export function decodeHashToView(hash, opts) {
 
 // --- analysis (Elemzés) view -----------------------------------------------
 // Four sub-views live under `tab=elemzes`. The narratives sub-view carries one or
-// more search phrases (repeated `q`), the accent-sensitive flag and its ratio mode
-// (on by default, so `ratio=0` turns it off). The activity sub-view
+// more search phrases (repeated `q`), the accent-sensitive flag, its search scope
+// (`in=all` or `in=video`; the post text alone is its default, unlike on the
+// Adatbázis tab) and its ratio mode (on by default, so `ratio=0` turns it off). The
+// activity sub-view
 // (`view=activity`) carries its author selection by NAME (repeated `author`, stable
 // across rebuilds — the caller maps names <-> ids) and its own ratio mode (off by
 // default, so `ratio=1` turns it on). The words sub-view (`view=words`) carries a
@@ -64,7 +76,7 @@ export function decodeHashToView(hash, opts) {
 // `q` never collides with the Adatbázis search.
 
 /**
- * @param {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames?:string[]}} v
+ * @param {{view:string, phrases:string[], accentSensitive:boolean, searchIn?:string, ratio:boolean, authorNames?:string[]}} v
  * @returns {string} hash body (without a leading '#'); '' for the default empty narratives view
  */
 export function encodeAnalysisToHash(v) {
@@ -100,23 +112,26 @@ export function encodeAnalysisToHash(v) {
   }
   if (p.getAll('q').length === 0) return ''; // an empty narratives view is the default
   if (v.accentSensitive) p.set('accent', '1');
+  if (SEARCH_IN_VALUES.includes(v.searchIn) && v.searchIn !== SEARCH_IN.TEXT) p.set('in', v.searchIn); // text is the default
   if (v.ratio === false) p.set('ratio', '0'); // ratio defaults to on
   return p.toString();
 }
 
 /**
  * @param {string} hash the location hash (leading '#' optional)
- * @returns {{view:string, phrases:string[], accentSensitive:boolean, ratio:boolean, authorNames:string[]}}
+ * @returns {{view:string, phrases:string[], accentSensitive:boolean, searchIn:string, ratio:boolean, authorNames:string[]}}
  */
 export function decodeHashToAnalysis(hash) {
   const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
   const rawView = p.get('view');
   const view =
     rawView === 'activity' ? 'activity' : rawView === 'links' ? 'links' : rawView === 'words' ? 'words' : 'narratives';
+  const searchIn = p.get('in');
   return {
     view,
     phrases: p.getAll('q').map((s) => s.trim()).filter((s) => s !== ''),
     accentSensitive: p.get('accent') === '1',
+    searchIn: SEARCH_IN_VALUES.includes(searchIn) ? searchIn : SEARCH_IN.TEXT,
     // Narratives ratio defaults on (`ratio=0` off); activity ratio defaults off (`ratio=1` on).
     ratio: view === 'activity' || view === 'words' ? p.get('ratio') === '1' : p.get('ratio') !== '0',
     authorNames: p.getAll('author').filter((n) => n && n.trim() !== '')

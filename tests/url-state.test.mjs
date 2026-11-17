@@ -39,6 +39,23 @@ test('decode rejects invalid sort, size and dates', () => {
   assert.equal(v.dateTo, '');
 });
 
+test('search scope round-trips as in=text / in=video and is omitted when both', () => {
+  const base = { search: 'x', accentSensitive: false, authorNames: [], dateFrom: '', dateTo: '', sort: 'date_desc', pageSize: 50 };
+  assert.equal(encodeViewToHash({ ...base, searchIn: 'all' }, ENC), 'q=x');
+  assert.equal(encodeViewToHash(base, ENC), 'q=x');
+  for (const searchIn of ['text', 'video']) {
+    const hash = encodeViewToHash({ ...base, searchIn }, ENC);
+    assert.equal(new URLSearchParams(hash).get('in'), searchIn);
+    assert.equal(decodeHashToView(hash, DEC).searchIn, searchIn);
+  }
+});
+
+test('search scope decodes to both for a missing or unknown value', () => {
+  assert.equal(decodeHashToView('q=x', DEC).searchIn, 'all');
+  assert.equal(decodeHashToView('q=x&in=bogus', DEC).searchIn, 'all');
+  assert.equal(decodeHashToView('q=x&in=all', DEC).searchIn, 'all');
+});
+
 test('decode tolerates a leading # and empty input', () => {
   assert.deepEqual(decodeHashToView('', DEC).authorNames, []);
   assert.equal(decodeHashToView('#q=hello&accent=1', DEC).search, 'hello');
@@ -117,6 +134,24 @@ test('activity ratio deep-links (off by default, ratio=1 turns it on)', () => {
 test('narratives ratio default is unaffected by the activity ratio semantics', () => {
   assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma').ratio, true); // still defaults on
   assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma&ratio=0').ratio, false);
+});
+
+test('narratives search scope: post text by default (omitted), in=all / in=video round-trip', () => {
+  assert.equal(encodeAnalysisToHash({ view: 'narratives', phrases: ['alma'], searchIn: 'text', ratio: true }), 'q=alma');
+  assert.equal(encodeAnalysisToHash({ view: 'narratives', phrases: ['alma'], ratio: true }), 'q=alma');
+  for (const searchIn of ['all', 'video']) {
+    const hash = encodeAnalysisToHash({ view: 'narratives', phrases: ['alma'], searchIn, ratio: true });
+    assert.equal(new URLSearchParams(hash).get('in'), searchIn);
+    assert.equal(decodeHashToAnalysis('#tab=elemzes&' + hash).searchIn, searchIn);
+  }
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma').searchIn, 'text');
+  assert.equal(decodeHashToAnalysis('#tab=elemzes&q=alma&in=bogus').searchIn, 'text');
+});
+
+test('the search scope belongs to the narratives sub-view only', () => {
+  assert.equal(new URLSearchParams(encodeAnalysisToHash({ view: 'activity', searchIn: 'video', authorNames: ['Áder János'] })).get('in'), null);
+  assert.equal(new URLSearchParams(encodeAnalysisToHash({ view: 'words', searchIn: 'video', authorNames: ['Áder János'] })).get('in'), null);
+  assert.equal(encodeAnalysisToHash({ view: 'links', searchIn: 'all' }), 'view=links');
 });
 
 test('analysis links sub-view round-trips with no parameters', () => {

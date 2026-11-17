@@ -14,6 +14,8 @@
 //   alma -körte     -> ("alma") NOT ("körte")   (exclusion)
 // Diacritics are preserved; the caller picks the sensitive or folded index.
 
+import { FTS_COLUMNS, SEARCH_IN } from './constants.js';
+
 export function buildFtsMatch(input) {
   if (typeof input !== 'string') return '';
   const text = input.normalize('NFC');
@@ -40,6 +42,23 @@ export function buildFtsMatch(input) {
     out = `(${out}) NOT (${negatives.join(' OR ')})`;
   }
   return out;
+}
+
+/**
+ * Restrict a MATCH expression from buildFtsMatch to one column of the two-column
+ * index (schema_version >= 4): SEARCH_IN.TEXT -> the post text, SEARCH_IN.VIDEO ->
+ * the video transcript. Anything else (SEARCH_IN.ALL) leaves it unrestricted, so a
+ * post matches when its text and transcript together satisfy the expression
+ * (`alma -körte` excludes a post with "körte" in either). The column filter is
+ * applied to the whole parenthesized expression, i.e. to every phrase in it.
+ * Only for archives with the transcript column: on older ones the column filter
+ * would be an error.
+ */
+export function scopeFtsMatch(match, searchIn) {
+  if (typeof match !== 'string' || match === '') return '';
+  if (searchIn === SEARCH_IN.TEXT) return `{${FTS_COLUMNS.text}} : (${match})`;
+  if (searchIn === SEARCH_IN.VIDEO) return `{${FTS_COLUMNS.video}} : (${match})`;
+  return match;
 }
 
 function tokenize(text) {
