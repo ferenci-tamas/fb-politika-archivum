@@ -94,7 +94,7 @@ A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://
 
 Az adatbázist és a képeket [Cloudflare R2](https://www.cloudflare.com/products/r2/)-n tároltam.
 
-A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 és 5.5 segítségével végeztem (a transzparencia érdekében a használt [promptot](prompt.md) közzéteszem). Az általa készített dokumentáció a [DOCUMENTATION.md](DOCUMENTATION.md) fájlban érhető el.
+A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 és 5.5 segítségével végeztem (a transzparencia érdekében a használt [promptot](prompt.md) közzéteszem).
 
 ## Az archívum hitelesítése
 
