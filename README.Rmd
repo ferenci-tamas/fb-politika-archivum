@@ -30,6 +30,7 @@ posts <- merge(posts, links[, .(nLink = .N), .(postId)], by = "postId", all.x = 
 local_time <- function(x) as.POSIXlt(as.POSIXct(x, tz = "UTC"), tz = "Europe/Budapest")
 fmt_date <- function(x) format(local_time(x), "%Y. %m. %d.")
 fmt_date_long <- function(x) format(local_time(x), "%Y. %B %d.")
+fmt_date_long_wodot <- function(x) format(local_time(x), "%Y. %B %d")
 fmt_count <- function(x) formatC(x, format = "d", big.mark = "\u00a0")
 ```
 
@@ -40,19 +41,30 @@ Fordítás: callr::r(function(input, toconvert) rmarkdown::render(input, params 
 
 Összeállította: Ferenci Tamás (<https://www.medstat.hu/>)
 
+## Az archívum célja
+
+Az archívum célja a jelentősebb magyar politikusok, politikai szereplők, pártok Facebook-posztjainak mentése, és ezek nyilvánosan elérhetővé tétele jól kezelhető (kereshető, szűrhető, rendezhető) formában, egyszerűbb elemzési, interaktív vizualizálási lehetőségekkel kiegészítve.
+
+A célom ezzel kettős. Az egyik célkitűzés ezen információk biztosabb megőrzése az utókor számára: az ilyen digitális tartalmaknál eleve is erősebb kérdés, hogy száz év múlva meglesznek-e még, de ezeknél a Facebook-oldalaknál pláne az (a 2026-os választás után napokon belül elkezdték politikusok törölni magukat, köztük több miniszter). Ezzel visszavonhatatlanul és bepótolhatatlanul elvesztek volna olyan információk, melyek fontosak lehetnek a jövő történészei, a következő generációk számára, hogy megértsék ezt a korszakot. A másik cél annak lehetővé tétele, hogy politikai, szociológiai kérdéseket számszerűen lehessen vizsgálni, hiszen a posztok és a szövegeik megteremtik ennek a lehetőségét, megvizsgálhatóak adatok alapján olyan kérdések, amiket gyakran szoktak emlegetni a politikai elemzésekben, de jellemzően nem adatokkal alátámasztott formában (például, hogy egy adott narratíva hogyan jelent meg vagy tűnt el, mikor ismételgették intenzívebben és mikor kevésbé).
+
+A részletesebb leírást és motivációt az archívum weboldalának bevezetője tartalmazza.
+
 ## Az archívum weboldala
 
-Az adatokat kereshető, szűrhető, rendezhető formában megjelenítő weboldal a <https://ferenci-tamas.github.io/fb-politika-archivum/> címen érhető el. Itt -- az elemzési lehetőségeket illusztrálandó -- néhány egyszerűbb elemzés is megtalálható, melyek az adatok interaktív vizsgálatát, ábrázolását teszik lehetővé néhány releváns szempont mentén.
+Az adatokat szűrhető és rendezhető formában megjelenítő weboldal a <https://ferenci-tamas.github.io/fb-politika-archivum/> címen érhető el. Az oldalon megtalálható a posztok szövege, a csatolt képek, valamint a csatolt videók leirata. A szövegekben, sőt, a videó-leiratokban is teljes szövegű keresés lehetséges (tehát lehet keresni és-sel, vagy-gyal, pontos kifejezésre, szókezdetre stb.).
 
-## Adatok elérhetősége
+Ezen felül, a lehetőségeket illusztrálandó, néhány egyszerűbb elemzés is megtalálható, melyek az adatok interaktív vizsgálatát, ábrázolását teszik lehetővé néhány releváns szempont mentén:
 
-A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a weboldalon, hanem nyers, gépi úton feldolgozható formátumban is elérhetővé teszem. Az adatok letölthetőek [SQLite](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) adatbázisként (mely minden táblát tartalmaz), vagy táblánként külön-külön, CSV formátumban: [posztok](https://fb-politika-archivum.medstat.hu/database/posts.csv), [linkek](https://fb-politika-archivum.medstat.hu/database/links.csv), illetve [képek](https://fb-politika-archivum.medstat.hu/database/images.csv). A képek fájlnév alapján a `https://fb-politika-archivum.medstat.hu/images/<kep>` címen érhetőek el (ahol a `<kep>` a fájlnevet jelenti).
+- Vizsgálható a politikusok, vagy egy bizonyos politikus posztolási aktivitásának alakulása az időben (amit mérhetünk a posztok abszolút számával, vagy az összes poszthoz viszonyított aránnyal; ez utóbbi kiküszöböli a posztolási aktivitás összességében vett időbeli változását, például, hogy általában felfut egy választás előtt).
+- Ha keresőszavakkal körülírunk egy narratívát, akkor megnézhetjük annak időbeli alakulását (azáltal, hogy az adott keresőkifejezés milyen sűrűséggel bukkant fel, illetve ez hogyan változott időben). Több narratíva is megadható és ábrázolható, így az összefüggések is jól vizsgálhatóak.
+- Link-avulási statisztika: a posztokban közzétett linkek mekkora hányada nem volt 2026 nyarára elérhető?
+- Megnézhetjük, hogy adott politikus posztjaiban mik voltak a leggyakoribb szavak, illetve ez hogyan alakult időben.
 
 ## Az archívum tartalma
 
 Az archívum tartalmának meghatározásához két dolgot kell definiálnunk: az időbeli lehatárolást és a gyűjtött adatok (jelen esetben Facebook-oldalak) körét. Kezdjük az előbbivel: a célom a kezdetektől 2026. április közepéig történő gyűjtés volt. A kezdőpont nem igényel magyarázatot, a végpont sem sokat: az archiválás vége a 2026-os országgyűlési választásokhoz kötődik (azzal a kitétellel, amit az oldal bevezetőjében is írtam: remélem, hogy ez csak a kezdet, egy ötlet felvetése, és mások, esetleg hivatalos szervek -- könyvtárak, levéltárak -- továbbviszik ezt a projektet, és így a 2026. április utáni helyzetről is lesz archívumunk).
 
-A gyűjtött Facebook-oldalak körének meghatározása keményebb dió volt. Kik azok a politikusok, akik elég "fontosak" ahhoz, hogy érdemes legyen az oldalukat archiválni? A legfontosabb célkitűzésem a teljességre törekvés, az átfogó gyűjtés volt, ezt egészítette ki az a szempont, hogy mindennek a kritériumai a lehető legobjektívebbek legyenek (tehát a fontosságot valamilyen rajtam kívül álló szempont határozza meg, ne az én döntésemen múljon). A kormánypártok esetén ez egyszerűbb volt, hiszen ott a pozíció jól meghatározza a fontosságot: archiváltam az időszak összes miniszterelnökének az oldalát, az összes miniszterét, és, ahol volt külön, az összes minisztériumét, magának a kormánynak az oldalát, valamint a kormányszóvivőkét. Az államtitkárok, kormánybiztosok, miniszteri biztosok stb. nehezebb feladatot jelentettek, hiszen -- mint én is rájöttem menet közben -- róluk még csak egy komplett lista sem érhető el triviális módon. Itt is törekedtem a teljességre, de az előbbi miatt ez kevésbé bombabiztos. Könnyű volt a helyzet a pártok tekintetében, mert itt egyszerűen lehetett objektív kritériumot találni: az országgyűlési képviselettel rendelkező pártok oldalait archiváltam. Végül a nehezebb feladat a mindenkori ellenzék volt, hiszen itt nincsenek olyan jól meghatározott, hierarchikus pozíciók, mint egy kormány esetében; törekedtem a pártvezetők, frakcióvezetők oldalainak legyűjtésére.
+A gyűjtött Facebook-oldalak körének meghatározása keményebb dió volt. Kik azok a politikusok, akik elég "jelentősek" ahhoz, hogy érdemes legyen az oldalukat archiválni? A legfontosabb célkitűzésem a teljességre törekvés, az átfogó gyűjtés volt, ezt egészítette ki az a szempont, hogy mindennek a kritériumai a lehető legobjektívebbek legyenek (tehát a fontosságot valamilyen rajtam kívül álló szempont határozza meg, ne az én döntésemen múljon). A kormánypártok esetén ez egyszerűbb volt, hiszen ott a pozíció jól meghatározza a fontosságot: archiváltam az időszak összes miniszterelnökének az oldalát, az összes miniszterét, és, ahol volt külön, az összes minisztériumét, magának a kormánynak az oldalát, valamint a kormányszóvivőkét. Az államtitkárok, kormánybiztosok, miniszteri biztosok stb. nehezebb feladatot jelentettek, hiszen -- mint én is rájöttem menet közben -- róluk még csak egy komplett lista sem érhető el triviális módon. Itt is törekedtem a teljességre, de az előbbi miatt ez kevésbé bombabiztos. Könnyű volt a helyzet a pártok tekintetében, mert itt egyszerűen lehetett objektív kritériumot találni: az országgyűlési képviselettel rendelkező pártok oldalait archiváltam. Végül a nehezebb feladat a mindenkori ellenzék volt, hiszen itt nincsenek olyan jól meghatározott, hierarchikus pozíciók, mint egy kormány esetében; törekedtem a pártvezetők, frakcióvezetők oldalainak legyűjtésére.
 
 A végeredményül kialakult listát, az oldalak legfontosabb adataival az alábbi táblázat mutatja (a nyílra kattintva megjeleníthető/elrejthető a táblázat):
 
@@ -80,7 +92,11 @@ knitr::kable(
 
 Ami a gyűjtés sikerességét illeti, egyetlen gikszer fordult elő: elsőként 5000 posztra limitálva indítottam el a gyűjtést (azt gondolván, hogy ez bőven elég -- sajnos eléggé alulbecsültem, hogy egyes politikusok mennyit posztolnak...), amit ugyan később kijavítottam, és letöltöttem az emiatt a korlát miatt lemaradt posztokat is, de két esetben -- Kovács Zoltán és Ovádi Péter -- addigra már törölték az eredeti oldalt, így ez sajnos utólag bepótolhatatlanná vált.
 
-Összességében az archívum `r fmt_count(nrow(posts))` posztot tartalmaz `r fmt_count(uniqueN(posts$authorName))` szerzőtől; az első archivált poszt dátuma `r fmt_date_long(min(posts$time))`, az utolsóé `r fmt_date_long(max(posts$time))`. A posztokban összesen `r fmt_count(nrow(images))` kép (együttes méretük: `r round(sum(posts$sizeImage, na.rm = TRUE)/1024/1024)` GB), `r fmt_count(nrow(videos))` videó (együttes méretük: `r round(sum(posts$sizeVideo, na.rm = TRUE)/1024/1024)` GB) és `r fmt_count(nrow(links))` link található.
+Összességében az archívum `r fmt_count(nrow(posts))` posztot tartalmaz `r fmt_count(uniqueN(posts$authorName))` szerzőtől; az első archivált poszt dátuma `r fmt_date_long(min(posts$time))`, az utolsóé `r fmt_date_long_wodot(max(posts$time))`. A posztokban összesen `r fmt_count(nrow(images))` kép (együttes méretük: `r round(sum(posts$sizeImage, na.rm = TRUE)/1024/1024)` GB), `r fmt_count(nrow(videos))` videó (együttes méretük: `r round(sum(posts$sizeVideo, na.rm = TRUE)/1024/1024)` GB) és `r fmt_count(nrow(links))` link található.
+
+## Adatok elérhetősége
+
+A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a weboldalon, hanem nyers, gépi úton feldolgozható formátumban is elérhetővé teszem. Az adatok letölthetőek [SQLite](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) adatbázisként (mely minden táblát tartalmaz), vagy táblánként külön-külön, CSV formátumban: [posztok](https://fb-politika-archivum.medstat.hu/database/posts.csv), [linkek](https://fb-politika-archivum.medstat.hu/database/links.csv), illetve [képek](https://fb-politika-archivum.medstat.hu/database/images.csv). A képek fájlnév alapján a `https://fb-politika-archivum.medstat.hu/images/<kep>` címen érhetőek el (ahol a `<kep>` a fájlnevet jelenti).
 
 ## Mit tegyek, ha szeretnék én is hozzájárulni ezen adatok biztonságos megőrzéséhez az utókor számára?
 
@@ -88,13 +104,63 @@ A válasz nagyon egyszerű: töltsd le az SQLite formátumú adatbázist! [Ezen 
 
 Hogy miért jó mindez? A digitális archiválás -- de igazából minden típusú archiválás -- egyik alapmegállapítása, hogy egy anyag annál biztonságosabban van megőrizve, minél több, egymástól független (más helyen, más által őrzött) példányban van meg. (Egy amerikai projekt a nevét is erről kapta: LOCKSS -- "lots of copies keep stuff safe", nagyjából: sok másolattal biztonságban vannak a dolgok.) Ezért jó, ha az adatbázis minél több helyen, minél több embernél megvan. (Ilyenkor a hitelesség kérdése fontossá válik, erre mindjárt kitérek.)
 
-## Technikai részletek
+## Technikai részletek, a munkafolyamat
 
-A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. A kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a felhasznált információkat. (A szkriptet csak azért nem teszem közzé, mert a formátum olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom, mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.) A kapott táblákból egy [SQLite](https://en.wikipedia.org/wiki/SQLite) formátumú adatbázist készítettem (az ehhez használt [szkriptből](SQLite-converter.R) a tábla formátuma is látható). Az SQLite azért célszerű választás, mert jól standardizált, széles körben használt formátum, ami [kifejezetten ajánlott](https://sqlite.org/locrsf.html) adatbázisok hosszú távú megőrzéséhez. (Ez azért fontos, nehogy a jövőben az legyen a probléma, hogy hiába is van meg az adat, a formátuma nem ismert.)
+### A letöltendő oldalak listájának összeállítása
 
-Az adatbázist és a képeket [Cloudflare R2](https://www.cloudflare.com/products/r2/)-n tároltam.
+A letöltendő oldalak listáját kézzel állítottam össze a fent leírt kritériumok alapján; a korábbi pont tartalmazza a használt listát.
 
-A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt Claude Opus 4.8 és 5.5 segítségével végeztem (a transzparencia érdekében a használt [promptot](prompt.md) közzéteszem).
+### Az oldalakon lévő posztok letöltése
+
+A Facebook-posztok jogtiszta módon történő letöltését az [Apify](https://apify.com/) segítségével végeztem. Ennek hatalmas előnye, hogy elég az oldal címét átadni, az oldalon lévő posztokat már maga találja meg, és utána tölti is le. Beállítható dátumszűrés, és a letöltött posztok száma is limitálható. Az Apify gépi úton jól feldolgozható eredményt ad, mely minden szükséges információt (posztok alapvető metaadatai, például dátuma, posztok szövege, linkek a csatolt képekre és videókra) tartalmaz. És mindemellett, ekkora számok mellett egyáltalán nem mellékes módon, nagyon gyors, nagy számú posztot tud párhuzamosítva, relatíve rövid idő alatt letölteni.
+
+Az Apify-tól kapott JSON-ökből egy R nyelvű szkripttel szedtem ki a szükséges információkat. (A szkriptet csak azért nem teszem közzé, mert a JSON formátuma olyan gyorsan változik, hogy a végén már nekem is mást kellett használnom, mint az elején. Claude-dal vagy hasonló eszközzel gyorsan megírható.)
+
+### A posztokhoz csatolt képek és videók letöltése
+
+Az előbbi pont alapján úgy tűnhet, hogy ez semmilyen nehézséget nem jelent, hiszen az Apify eredménye tartalmazza a szükséges linkeket. Ez valóban így is van, egy csavarral: a Facebook, azért, hogy megelőzze a [hotlinking-et](https://en.wikipedia.org/wiki/Inline_linking), tehát, hogy a képeket és videókat kívülről közvetlenül belinkelje valaki, az URL-eket folyamatosan változtatja. (A fájlnév állandó, csak az URL-ben van egy változó rész.) Éppen ezért bár valóban csak letölteni kell, de egy dolog fontos: gyorsnak kell lenni. A JSON elkészülte után azonnal neki kell látni a letöltésnek, mert a link nem biztos, hogy sokáig érvényes marad.
+
+A letöltéshez egy [saját szkriptet](downloader.R) használtam, mely párhuzamosítja a letöltést, kezeli az automatikus újrapróbálkozást, a növekvő várakozást újrapróbálkozásnál, a megszakadt letöltések folytatását stb. A szkript a [`curl`](https://jeroen.r-universe.dev/curl) csomagot használja a letöltéshez.
+
+### A videók integritás-ellenőrzése
+
+Különösen a videóknál fontos a letöltött állomány épségének vizsgálata, az esetleges letöltési hibákra, megszakadt letöltésekre tekintettel.
+
+Ezt egy [saját szkripttel](check_video_integrity.R) végeztem, mely kétlépcsős ellenőrzést használ: az első fázis egy gyors ellenőrzés, mely nem dekódolja a videót, így lényegében a megszakadt letöltések kiszűrésére jó. Azok a videók, amik átmentek ezen az ellenőrzésen, továbbmennek a második fázisba, mely már egy jóval lassabb, teljes dekódolást végrehajtó ellenőrzést. Mindkét ellenőrzéshez az [`ffmpeg`](https://en.wikipedia.org/wiki/FFmpeg) csomagot használja a szkript. A fennakadt videókat nem törli ki, hanem egy másik mappába helyezi át. A szkript tartalmazza a hibás videók újra-letöltését is: megkeresi, hogy mely posztokhoz tartozik sérült videó, és azok linkje alapján direkte -- az Apify újabb meghívása nélkül -- letölti az aktuális videó linkjét, ami így újra letölhető.
+
+### Videók leiratozása
+
+A videókat a hatalmas méretük miatt nem tudtam feltölteni, de valójában ha fel tudtam volna, akkor is probléma lenne, hogy hogyan lehet megtalálni egy adott videót. Persze, lehet szűrni dátumra vagy politikusra, de a gyakorlatban sokkal-sokkal tipikusabb, hogy valamilyen témához kötődő, valamilyen kifejezést tartalmazó videót vagy videókat szeretné valaki megkeresni. Éppen ezért úgy döntöttem, hogy gépi úton leiratozom az összes videót! Ez lehetővé teszi a szövegükben való keresést is.
+
+Ehhez a [`whisper`](https://github.com/openai/whisper) rendszert használtam, pontosabban szólva egy vele egyenértékű, de jóval gyorsabb reimplementációját, a [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper)-t.
+
+A sebesség ugyanis a kulcsprobléma volt. A leiratozás CPU-n rendkívül lassú, még többmagos végrehajtással is, a GPU sokat segít, de még így is időigényes. De, mint kiderült, végül is "háztáji" eszközökkel is megoldható a feladat, de úgy azért nem triviálisan: az én rendelkezésemre álló GeForce RTX 5060 Laptop GPU-val nagyjából 10 GB/óra sebesség érhető el.
+
+A feladatot egy külön -- kivételesen Python nyelvű -- [szkripttel](batch_transcribe.py) végeztem, mely gondoskodik a mentésről, az újraindíthatóságról, a folyamat állapotának kijelzéséről stb.
+
+### Teljes szövegű keresés
+
+Fontos, hogy a posztok (sőt, a leiratozás miatt a videók) szövegében is jól lehessen keresni. Ez azt jelenti, hogy ne egyszerűen szavakat tudjunk keresni, hanem lehessen logikai operátorokat (és, vagy) használni, pontos kifejezésre keresni, szókezdetre keresni stb. Ezt a feladatot [FTS5](https://sqlite.org/fts5.html) használatával valósítottam meg.
+
+### Nyelvi előkészítés a leggyakoribb szavakhoz (stopszó-szűrés, szótövezés)
+
+A leggyakoribb szavak megjelenítése komolyabb nyelvi előkészítést igényel. Az egyik fontos probléma, hogy a jelentőség nélküli, de nagyon gyakran előforduló szavakat ("az", "és", "hogy", stb.) el kell távolítani; ezt hívják stopszó-szűrésnek.
+
+### Az adatbázis összeállítása
+
+Az adatokat tároló táblákból egy [SQLite](https://en.wikipedia.org/wiki/SQLite) formátumú adatbázist készítettem. Az SQLite azért célszerű választás, mert jól standardizált, széles körben használt formátum, ami [kifejezetten ajánlott](https://sqlite.org/locrsf.html) adatbázisok hosszú távú megőrzéséhez. (Ez azért fontos, nehogy a jövőben az legyen a probléma, hogy hiába is van meg az adat, a formátuma nem ismert.)
+
+Az adatbázist egy külön [szkript](SQLite-converter.R) állítja össze; ez végzi a fenti feladatok közül a teljes szövegű keresés előkészítését és a nyelvi előkészítést is
+
+Az adatbázis tábla-struktúrája ebből a szkriptből szintén kiolvasható.
+
+### Az adatok tárolása
+
+Az adatbázist és a képeket [Cloudflare R2](https://www.cloudflare.com/products/r2/)-n tároltam. A megjelenítő weboldal [GitHub Pages](https://docs.github.com/en/pages) platformon fut (ez azt is jelenti, hogy a weboldal teljesen [statikus](https://en.wikipedia.org/wiki/Static_web_page); ez egyszerűbbé és olcsóbbá tette a projektet, valamint praktikusan korlátlanná a skálázást, ha esetleg sokan akarnák egyszerre megnézni az archívumot).
+
+### Az archívumot megjelenítő weboldal
+
+A megjelenítő felület megalkotása messze-messze túlmegy a képességeimen, ezt teljes egészében Claude Opus 4.8 és 5.5 segítségével végeztem (a transzparencia érdekében a kiinduló változathoz használt [promptot](prompt.md) közzéteszem). A weboldal tartalmaz egy bevezető szöveget, a kereshető, szűrhető, rendezhető adatbázist, valamint a fent már említett egyszerű elemzési, interaktív vizualizálási lehetőségeket.
 
 ## Az archívum hitelesítése
 
