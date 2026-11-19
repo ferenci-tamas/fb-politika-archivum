@@ -144,13 +144,13 @@ Fontos, hogy a posztok (sőt, a leiratozás miatt a videók) szövegében is jó
 
 ### Nyelvi előkészítés a leggyakoribb szavakhoz (stopszó-szűrés, szótövezés)
 
-A leggyakoribb szavak megjelenítése komolyabb nyelvi előkészítést igényel. Az egyik fontos probléma, hogy a jelentőség nélküli, de nagyon gyakran előforduló szavakat ("az", "és", "hogy", stb.) el kell távolítani; ezt hívják stopszó-szűrésnek.
+A leggyakoribb szavak megjelenítése komolyabb nyelvi előkészítést igényel. Az egyik probléma, hogy a jelentőség nélküli, de nagyon gyakran előforduló szavakat ("az", "és", "hogy", stb.) el kell távolítani; ezt hívják stopszó-szűrésnek, erre a célra a [`stopwords`](https://github.com/quanteda/stopwords) könyvtárat használtam. A másik, talán még nagyobb gond, hogy nem lenne szerencsés, ha az "inflációnak" és az "inflációval" szavakat külön számolná, ezeket jobb lenne az "infláció" alatt egyben gyűjteni -- magyarán, az ilyen ragozásokat és hasonlókat le kellene választani a szavakról. Ezt hívják szótövezésnek, erre a célra az [`udpipe`](https://github.com/bnosac/udpipe) csomagot használtam, a [Szeged Dependency Treebank](https://rgai.inf.u-szeged.hu/node/158)-en alapuló [`hungarian-szeged`](https://universaldependencies.org/treebanks/hu_szeged/index.html) szabályrendszer segítségével.
 
 ### Az adatbázis összeállítása
 
 Az adatokat tároló táblákból egy [SQLite](https://en.wikipedia.org/wiki/SQLite) formátumú adatbázist készítettem. Az SQLite azért célszerű választás, mert jól standardizált, széles körben használt formátum, ami [kifejezetten ajánlott](https://sqlite.org/locrsf.html) adatbázisok hosszú távú megőrzéséhez. (Ez azért fontos, nehogy a jövőben az legyen a probléma, hogy hiába is van meg az adat, a formátuma nem ismert.)
 
-Az adatbázist egy külön [szkript](SQLite-converter.R) állítja össze; ez végzi a fenti feladatok közül a teljes szövegű keresés előkészítését és a nyelvi előkészítést is
+Az adatbázist egy külön [szkript](SQLite-converter.R) állítja össze; ez végzi a fenti feladatok közül a teljes szövegű keresés előkészítését és a nyelvi előkészítést is, több egyéb feladat (például a leiratozás egy egyszerű tisztítása) mellett.
 
 Az adatbázis tábla-struktúrája ebből a szkriptből szintén kiolvasható.
 
@@ -179,9 +179,9 @@ Az `archive.sqlite` utolsó változatának időbélyege `r jsonlite::read_json("
 
 ## Továbbfejlesztési lehetőségek
 
-- Videók kérdése (1,5 TB, ennek érdemi költsége lenne zero egress cost-tal együtt is, pusztán tárhely miatt).
-- Fényképek leírása, videók feliratozása (majd szöveges vizsgálatok ezek alapján is).
+- Videók tárolásának és közzétételének kérdése (1,5 TB, ennek érdemi költsége lenne zero egress cost-tal együtt is, pusztán tárhely miatt).
+- Fényképeken lévő szövegek felismerése, fényképek -- és esetleg videók -- tartalmának szöveges leírása (jóval kevésbé objektív, mint a leiratozás).
 - Politikusok csoportosítása politikai pártok, politikai pártok csoportosítása kormányzat/ellenzék státusz szerint és politikai nézetrendszer szerint (ez utóbbi kérdőjeles, mert szemben az előbbi kettővel, nem tökéletesen objektív).
 - Vector database alkalmazása?
 - Spline simítás alkalmazása a grafikonokon a havi bontás helyett.
-- Videók -- esetleg képek -- integritásvizsgálata (esetleges letöltési hibákra tekintettel).
+- Képek integritásvizsgálata (esetleges letöltési hibákra tekintettel).
