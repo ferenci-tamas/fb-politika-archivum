@@ -23,7 +23,7 @@ Ezen felül, a lehetőségeket illusztrálandó, néhány egyszerűbb elemzés i
 - Vizsgálható a politikusok, vagy egy bizonyos politikus posztolási aktivitásának alakulása az időben (amit mérhetünk a posztok abszolút számával, vagy az összes poszthoz viszonyított aránnyal; ez utóbbi kiküszöböli a posztolási aktivitás összességében vett időbeli változását, például, hogy általában felfut egy választás előtt).
 - Ha keresőszavakkal körülírunk egy narratívát, akkor megnézhetjük annak időbeli alakulását (azáltal, hogy az adott keresőkifejezés milyen sűrűséggel bukkant fel, illetve ez hogyan változott időben). Több narratíva is megadható és ábrázolható, így az összefüggések is jól vizsgálhatóak.
 - Link-avulási statisztika: a posztokban közzétett linkek mekkora hányada nem volt 2026 nyarára elérhető?
-- Megnézhetjük, hogy adott politikus posztjaiban mik voltak a leggyakoribb szavak, illetve ez hogyan alakult időben.
+- Megnézhetjük, hogy adott politikus posztjaiban mik voltak a leggyakoribb szavak, illetve, hogy ez az összetétel hogyan alakult időben.
 
 ## Az archívum tartalma
 
@@ -166,7 +166,7 @@ Ami a gyűjtés sikerességét illeti, egyetlen gikszer fordult elő: elsőként
 
 ## Adatok elérhetősége
 
-A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a weboldalon, hanem nyers, gépi úton feldolgozható formátumban is elérhetővé teszem. Az adatok letölthetőek [SQLite](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) adatbázisként (mely minden táblát tartalmaz), vagy táblánként külön-külön, CSV formátumban: [posztok](https://fb-politika-archivum.medstat.hu/database/posts.csv), [linkek](https://fb-politika-archivum.medstat.hu/database/links.csv), illetve [képek](https://fb-politika-archivum.medstat.hu/database/images.csv). A képek fájlnév alapján a `https://fb-politika-archivum.medstat.hu/images/<kep>` címen érhetőek el (ahol a `<kep>` a fájlnevet jelenti).
+A továbbfeldolgozás megkönnyítése érdekében az adatokat nem csak a weboldalon, hanem nyers, gépi úton feldolgozható formátumban is elérhetővé teszem. Az adatok letölthetőek SQLite formátumú [adatbázisként](https://fb-politika-archivum.medstat.hu/database/archive.sqlite) (mely minden táblát tartalmaz), vagy táblánként külön-külön, CSV formátumban: [posztok](https://fb-politika-archivum.medstat.hu/database/posts.csv), [linkek](https://fb-politika-archivum.medstat.hu/database/links.csv), illetve [képek](https://fb-politika-archivum.medstat.hu/database/images.csv). A képek fájlnév alapján a `https://fb-politika-archivum.medstat.hu/images/<kep>` címen érhetőek el (ahol a `<kep>` a fájlnevet jelenti).
 
 ## Mit tegyek, ha szeretnék én is hozzájárulni ezen adatok biztonságos megőrzéséhez az utókor számára?
 
@@ -196,7 +196,7 @@ A letöltéshez egy [saját szkriptet](downloader.R) használtam, mely párhuzam
 
 Különösen a videóknál fontos a letöltött állomány épségének vizsgálata, az esetleges letöltési hibákra, megszakadt letöltésekre tekintettel.
 
-Ezt egy [saját szkripttel](check_video_integrity.R) végeztem, mely kétlépcsős ellenőrzést használ: az első fázis egy gyors ellenőrzés, mely nem dekódolja a videót, így lényegében a megszakadt letöltések kiszűrésére jó. Azok a videók, amik átmentek ezen az ellenőrzésen, továbbmennek a második fázisba, mely már egy jóval lassabb, teljes dekódolást végrehajtó ellenőrzést. Mindkét ellenőrzéshez az [`ffmpeg`](https://en.wikipedia.org/wiki/FFmpeg) csomagot használja a szkript. A fennakadt videókat nem törli ki, hanem egy másik mappába helyezi át. A szkript tartalmazza a hibás videók újra-letöltését is: megkeresi, hogy mely posztokhoz tartozik sérült videó, és azok linkje alapján direkte – az Apify újabb meghívása nélkül – letölti az aktuális videó linkjét, ami így újra letölhető.
+Ezt egy [saját szkripttel](check_video_integrity.R) végeztem, mely kétlépcsős ellenőrzést használ: az első fázis egy gyors ellenőrzés, mely nem dekódolja a videót, így lényegében a megszakadt letöltések kiszűrésére jó. Azok a videók, amik átmentek ezen az ellenőrzésen, továbbmennek a második fázisba, mely már egy jóval lassabb, teljes dekódolást végrehajtó ellenőrzést. Mindkét ellenőrzéshez az [`ffmpeg`](https://en.wikipedia.org/wiki/FFmpeg) csomagot használja a szkript. A fennakadt videókat nem törli ki, hanem egy másik mappába helyezi át. A szkript tartalmazza a hibás videók újra-letöltését is: megkeresi, hogy mely posztokhoz tartozik sérült videó, és azok linkje alapján direkte – az Apify újabb meghívása nélkül – megkeresi az aktuális videó linkjét, ami így újra letölhető.
 
 ### Videók leiratozása
 
@@ -255,3 +255,4 @@ Az `archive.sqlite` utolsó változatának időbélyege 1794943899, mérete 1174
 - Vector database alkalmazása?
 - Spline simítás alkalmazása a grafikonokon a havi bontás helyett.
 - Képek integritásvizsgálata (esetleges letöltési hibákra tekintettel).
+- Lehet, hogy van jobb könyvtár a nyelvi előkészítéshez ([HuSpaCy](https://github.com/huspacy/huspacy)).
